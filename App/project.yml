@@ -1,0 +1,71 @@
+name: AgentUsage
+options:
+  bundleIdPrefix: com.juanlatorre
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: true
+
+packages:
+  AgentUsageCore:
+    path: ../Packages/AgentUsageCore
+
+targets:
+  AgentUsage:
+    type: application
+    platform: macOS
+    sources:
+      - AgentUsage
+    dependencies:
+      - package: AgentUsageCore
+    info:
+      path: AgentUsage/Info.plist
+      properties:
+        CFBundleDisplayName: Agent Usage
+        LSApplicationCategoryType: public.app-category.utilities
+        LSMinimumSystemVersion: "14.0"
+        NSHumanReadableCopyright: ""
+        NSPrincipalClass: NSApplication
+
+  AgentUsageTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - AgentUsageTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+    dependencies:
+      - target: AgentUsage
+
+  AgentUsageUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - AgentUsageUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+    dependencies:
+      - target: AgentUsage
+
+schemes:
+  AgentUsage:
+    build:
+      targets:
+        AgentUsage: all
+        AgentUsageTests: [test]
+        AgentUsageUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - AgentUsageTests
+        - AgentUsageUITests

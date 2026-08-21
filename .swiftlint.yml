@@ -1,0 +1,22 @@
+# SwiftLint configuration for the Agent Usage workspace.
+included:
+  - Packages/AgentUsageCore/Sources
+  - Packages/AgentUsageCore/Tests
+  - App/AgentUsage
+  - App/AgentUsageTests
+  - App/AgentUsageUITests
+excluded:
+  - Packages/AgentUsageCore/.build
+  - App/AgentUsage.xcodeproj
+
+identifier_name:
+  min_length: 3
+  max_length: 60
+
+function_body_length:
+  warning: 80
+  error: 120
+
+nesting:
+  type_level:
+    warning: 2
