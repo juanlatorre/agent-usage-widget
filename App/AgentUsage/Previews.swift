@@ -61,7 +61,7 @@ enum PreviewFixtures {
             return AvailabilityEngine.derive(
                 slot: openCode, snapshot: nil, now: now)
         case .error:
-            var base = AvailabilityEngine.derive(
+            let base = AvailabilityEngine.derive(
                 slot: openCode,
                 snapshot: UsageSnapshot(
                     slotID: .openCodeGO, provider: .opencode,
@@ -81,6 +81,17 @@ enum PreviewFixtures {
                 slot: self.slot(.claudeLegacyA, label: "Claude (legacy A)",
                            windows: [.fiveHour, .weekly], connected: false),
                 snapshot: nil, now: now)
+        case .authenticationRequired:
+            return AvailabilityEngine.derive(
+                slot: self.slot(.claudeLegacyA, label: "Claude (legacy A)",
+                           windows: [.fiveHour, .weekly]),
+                snapshot: UsageSnapshot(
+                    slotID: .claudeLegacyA, provider: .claude,
+                    windows: [window(.fiveHour, used: 48, limit: 100, resetIn: 1500),
+                              window(.weekly, used: 22, limit: 100, resetIn: 3 * 86_400)],
+                    capturedAt: now.addingTimeInterval(-3 * 60)),
+                now: now,
+                authenticationRequired: true)
         }
     }
 }
@@ -107,5 +118,10 @@ enum PreviewFixtures {
 
 #Preview("Not connected") {
     AccountDetailView(presentation: PreviewFixtures.presentation(status: .notConnected),
+                      displayMode: .remaining)
+}
+
+#Preview("Reconnection required") {
+    AccountDetailView(presentation: PreviewFixtures.presentation(status: .authenticationRequired),
                       displayMode: .remaining)
 }

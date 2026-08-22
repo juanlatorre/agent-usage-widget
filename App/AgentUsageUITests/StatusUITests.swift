@@ -13,9 +13,12 @@ final class StatusUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func launch() -> XCUIApplication {
+    private func launch(seededClaudeFixtures: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["AGENT_USAGE_UITEST"] = "1"
+        if seededClaudeFixtures {
+            app.launchEnvironment["AGENT_USAGE_UITEST_CLAUDE_FIXTURE"] = "1"
+        }
         if app.state == .runningForeground || app.state == .runningBackground {
             app.terminate()
             sleep(1)
@@ -57,5 +60,59 @@ final class StatusUITests: XCTestCase {
 
         // A disconnected slot shows an honest empty state, never fabricated usage.
         XCTAssertTrue(app.staticTexts["No usage data yet."].waitForExistence(timeout: 10))
+    }
+
+    /// Claude slots surface the profile-connection management section.
+    func testClaudeSlotShowsConnectSectionWhenDisconnected() throws {
+        let app = launch()
+        let slotRow = rowText(for: "Claude (legacy A)", in: app)
+        XCTAssertTrue(slotRow.waitForExistence(timeout: 15))
+        slotRow.click()
+
+        XCTAssertTrue(app.staticTexts["Profile connection"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Connect"].waitForExistence(timeout: 10))
+        // Consent copy explains what a connection does, without exposing secrets.
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@",
+                        "copied into your Keychain", "copied into your Keychain")
+        ).firstMatch.waitForExistence(timeout: 10))
+    }
+
+    /// With the hermetic fixture seed, both Claude slots render Connected-state
+    /// actions: identity summary plus Reconnect/Test/Refresh/Disconnect controls.
+    func testConnectedClaudeSlotExposesConnectionActions() throws {
+        let app = launch(seededClaudeFixtures: true)
+        let slotRow = rowText(for: "Claude (legacy A)", in: app)
+        XCTAssertTrue(slotRow.waitForExistence(timeout: 15))
+        slotRow.click()
+
+        XCTAssertTrue(app.staticTexts["Profile connection"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Disconnect"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Reconnect"].exists || app.buttons["Test Connection"].exists,
+                      "connected slot should offer reconnect/test controls")
+        // The sanitized identity summary is visible; raw tokens are not.
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "identity ", "identity ")
+        ).firstMatch.exists)
+        for element in app.descendants(matching: .any).allElementsBoundByIndex {
+            if let label = element.value as? String, label.contains("uitest-h") {
+                XCTFail("raw fixture token leaked into accessibility tree")
+            }
+        }
+    }
+
+    /// Disconnecting from the UI returns the slot to its Connect state.
+    func testDisconnectReturnsSlotToConnectState() throws {
+        let app = launch(seededClaudeFixtures: true)
+        let slotRow = rowText(for: "Claude (legacy B)", in: app)
+        XCTAssertTrue(slotRow.waitForExistence(timeout: 15))
+        slotRow.click()
+
+        let disconnect = app.buttons["Disconnect"]
+        XCTAssertTrue(disconnect.waitForExistence(timeout: 10))
+        disconnect.click()
+
+        XCTAssertTrue(app.buttons["Connect"].waitForExistence(timeout: 10),
+                      "slot must return to the Connect state after disconnect")
     }
 }

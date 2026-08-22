@@ -22,8 +22,12 @@ struct RootView: View {
             .frame(minWidth: 260)
         } detail: {
             if let presentation = model.presentations.first(where: { $0.slotID == selection }) {
-                AccountDetailView(presentation: presentation,
-                                  displayMode: model.preferences.displayMode)
+                AccountDetailView(
+                    presentation: presentation,
+                    displayMode: model.preferences.displayMode,
+                    claudeSlot: ClaudeAccountController.managedSlots.contains(presentation.slotID)
+                        ? presentation.slotID : nil,
+                    statusModel: model)
             } else {
                 ContentUnavailableView("No account selected", systemImage: "rectangle.dashed")
             }
@@ -74,6 +78,7 @@ struct AccountRow: View {
             return "Blocked"
         case .error: return "Refresh failed"
         case .unavailable: return "Unavailable"
+        case .authenticationRequired: return "Reconnection required"
         }
     }
 
@@ -92,6 +97,7 @@ struct StatusGlyph: View {
         case .available: return .green
         case .blocked: return .orange
         case .error, .unavailable: return .red
+        case .authenticationRequired: return .purple
         }
     }
 
@@ -102,6 +108,7 @@ struct StatusGlyph: View {
         case .available: return "checkmark.circle.fill"
         case .blocked: return "exclamationmark.triangle.fill"
         case .error, .unavailable: return "xmark.circle.fill"
+        case .authenticationRequired: return "key.slash"
         }
     }
 
@@ -135,6 +142,7 @@ struct UsageRing: View {
         case .available: return .green
         case .blocked: return .orange
         case .error, .unavailable: return .red
+        case .authenticationRequired: return .purple
         case .loading, .notConnected: return .gray
         }
     }

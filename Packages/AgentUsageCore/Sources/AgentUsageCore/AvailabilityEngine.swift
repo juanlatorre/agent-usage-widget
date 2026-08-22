@@ -16,6 +16,9 @@ public enum AccountStatus: Equatable, Sendable {
     case error
     /// Required data is missing/invalid, or the last snapshot reached the freshness horizon.
     case unavailable
+    /// Credentials are missing or were rejected; reconnection is required before
+    /// any current claim can be made (parent R7 precedence).
+    case authenticationRequired
 }
 
 /// One blocking usage window prepared for presentation.
@@ -104,11 +107,27 @@ public enum AvailabilityEngine {
     ///   - slot: the static catalog entry for the slot.
     ///   - snapshot: the last persisted valid snapshot, if any.
     ///   - now: injected current time.
+    ///   - authenticationRequired: refresh-layer signal that credentials are
+    ///     missing or were rejected. Outranks every other state (parent R7);
+    ///     any snapshot remains visible only as historical context.
     public static func derive(
         slot: AccountSlot,
         snapshot: UsageSnapshot?,
-        now: Date
+        now: Date,
+        authenticationRequired: Bool = false
     ) -> AccountPresentation {
+        if authenticationRequired {
+            let age = snapshot?.age(at: now) ?? 0
+            var notes = snapshot.map(sanitizedDiagnostics(from:)) ?? []
+            notes.append("Credentials are missing or were rejected; reconnect the account.")
+            return AccountPresentation(
+                slotID: slot.slotID, label: slot.label, status: .authenticationRequired,
+                blockers: [], limitingWindow: nil, availableAt: nil,
+                snapshotAge: age,
+                historicalWindows: snapshot?.windows ?? [],
+                diagnosticNotes: notes)
+        }
+
         guard let snapshot else {
             if slot.isConnected {
                 return AccountPresentation(
@@ -268,9 +287,15 @@ public enum AvailabilityEngine {
     public static func deriveAll(
         slots: [AccountSlot],
         snapshots: [AccountSlotID: UsageSnapshot],
-        now: Date
+        now: Date,
+        authenticationRequired: Set<AccountSlotID> = []
     ) -> [AccountPresentation] {
-        slots.map { derive(slot: $0, snapshot: snapshots[$0.slotID], now: now) }
+        slots.map { derive(
+            slot: $0,
+            snapshot: snapshots[$0.slotID],
+            now: now,
+            authenticationRequired: authenticationRequired.contains($0.slotID))
+        }
     }
 
     // MARK: - Helpers

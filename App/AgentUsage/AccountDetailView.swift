@@ -5,6 +5,10 @@ import AgentUsageCore
 struct AccountDetailView: View {
     let presentation: AccountPresentation
     let displayMode: DisplayPreferences.DisplayMode
+    /// Claude slot ID when this detail belongs to a managed Claude slot.
+    var claudeSlot: AccountSlotID?
+    /// Owning model backing the connection surface.
+    var statusModel: StatusModel?
 
     var body: some View {
         ScrollView {
@@ -13,6 +17,9 @@ struct AccountDetailView: View {
                 statusBanner
                 if presentation.status == .blocked {
                     blockersSection
+                }
+                if let claudeSlot, let statusModel {
+                    ClaudeConnectionSection(slotID: claudeSlot, statusModel: statusModel)
                 }
                 windowsSection
                 diagnosticsSection
@@ -67,6 +74,9 @@ struct AccountDetailView: View {
         case .unavailable:
             banner("Current availability cannot be confirmed. History is context only.",
                    systemImage: "questionmark.circle", tint: .red)
+        case .authenticationRequired:
+            banner("Credentials are missing or were rejected. Reconnect this account.",
+                   systemImage: "key.slash", tint: .red)
         case .available, .blocked:
             EmptyView()
         }
@@ -142,6 +152,7 @@ struct AccountDetailView: View {
         case .blocked: return "Blocked"
         case .error: return "Refresh failed"
         case .unavailable: return "Unavailable"
+        case .authenticationRequired: return "Reconnection required"
         }
     }
 

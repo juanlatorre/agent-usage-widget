@@ -30,10 +30,14 @@ final class StatusModel {
     @ObservationIgnored private let snapshotStore: SnapshotStore?
     @ObservationIgnored private let preferencesStore: PreferencesStore?
     @ObservationIgnored private let connectionsURL: URL?
+    /// Claude connection/refresh orchestration; nil only in degenerate stores.
+    @ObservationIgnored private(set) var claudeManager: ClaudeConnectionManager?
 
     private(set) var preferences: DisplayPreferences
     private(set) var presentations: [AccountPresentation] = []
     private var snapshots: [AccountSlotID: UsageSnapshot] = [:]
+    /// Slots whose last refresh reported missing/rejected credentials (parent R7).
+    private(set) var authenticationRequiredSlots: Set<AccountSlotID> = []
 
     /// Injected clock for deterministic behavior and previews.
     @ObservationIgnored var now: () -> Date
@@ -41,14 +45,25 @@ final class StatusModel {
     init(
         snapshotStore: SnapshotStore?,
         preferencesStore: PreferencesStore?,
+        claudeManager: ClaudeConnectionManager? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.snapshotStore = snapshotStore
         self.preferencesStore = preferencesStore
+        self.claudeManager = claudeManager
         self.now = now
         self.preferences = preferencesStore?.load() ?? DisplayPreferences()
         self.connectionsURL = preferencesStore.map(Self.connectionsFileURL(of:))
         self.slots = Self.loadConnections(from: connectionsURL)
+        // Persisted Claude connections are authoritative for the two Claude slots:
+        // a slot bound to a profile directory is genuinely connected.
+        if let claudeManager {
+            for slotID in ClaudeAccountController.managedSlots where claudeManager.isConnected(slotID) {
+                if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                    slots[index].isConnected = true
+                }
+            }
+        }
         refreshDerivedState()
     }
 
@@ -57,7 +72,8 @@ final class StatusModel {
     /// Recompute presentation for all slots. Availability is never stored as truth.
     func refreshDerivedState() {
         presentations = AvailabilityEngine.deriveAll(
-            slots: slots, snapshots: snapshots, now: now())
+            slots: slots, snapshots: snapshots, now: now(),
+            authenticationRequired: authenticationRequiredSlots)
     }
 
     private func presentation(for slotID: AccountSlotID) -> AccountPresentation? {
@@ -229,5 +245,78 @@ final class StatusModel {
         }
         snapshots = loaded
         refreshDerivedState()
+    }
+
+    // MARK: - Claude connections (child 02)
+
+    /// Attach Claude connection management. Called after stores resolve; tests
+    /// may inject a manager over fakes.
+    func attachClaudeManager(_ manager: ClaudeConnectionManager) {
+        claudeManager = manager
+        for slotID in ClaudeAccountController.managedSlots where manager.isConnected(slotID) {
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                slots[index].isConnected = true
+            }
+        }
+        refreshDerivedState()
+    }
+
+    /// Connect a Claude slot to the selected profile directory (explicit consent).
+    public func connectClaudeSlot(
+        _ slotID: AccountSlotID,
+        directory: URL
+    ) -> Result<Void, Error> {
+        guard let claudeManager else { return .failure(ClaudeConnectionError.notConfigured) }
+        do {
+            try claudeManager.connect(slotID: slotID, directory: directory)
+            authenticationRequiredSlots.remove(slotID)
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                slots[index].isConnected = true
+            }
+            persistConnections()
+            refreshDerivedState()
+            return .success(())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// Disconnect a Claude slot, removing only its app-owned credential,
+    /// bookmark record, and snapshot (child spec R8, I2).
+    public func disconnectClaudeSlot(_ slotID: AccountSlotID) {
+        guard let claudeManager else { return }
+        claudeManager.disconnect(slotID: slotID)
+        authenticationRequiredSlots.remove(slotID)
+        snapshots[slotID] = nil
+        snapshotStore?.remove(slotID: slotID)
+        if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+            slots[index].isConnected = false
+        }
+        persistConnections()
+        refreshDerivedState()
+    }
+
+    /// Refresh one Claude slot through the connection manager.
+    ///
+    /// Outcomes follow child spec R6/R7 and parent R7/R11: success persists a
+    /// complete-or-partial valid snapshot; identity loss raises
+    /// AUTHENTICATION_REQUIRED; every other failure keeps the last valid
+    /// snapshot as history without fabricating zero usage.
+    public func refreshClaudeSlot(_ slotID: AccountSlotID) async -> ClaudeRefreshOutcome {
+        guard let claudeManager else { return .failed }
+        let outcome = await claudeManager.refresh(slotID: slotID)
+        switch outcome {
+        case let .updated(snapshot):
+            snapshots[slotID] = snapshot
+            storeSnapshot(snapshot)
+            authenticationRequiredSlots.remove(slotID)
+        case .authenticationRequired, .sourceIdentityChanged:
+            // Keep the prior snapshot purely as historical context (parent R7/R11).
+            authenticationRequiredSlots.insert(slotID)
+        case .failed:
+            break
+        }
+        refreshDerivedState()
+        return outcome
     }
 }
