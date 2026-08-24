@@ -41,6 +41,30 @@ public final class InMemoryCredentialStore: CredentialStoring, @unchecked Sendab
     }
 }
 
+extension InMemoryCredentialStore: OpenCodeCredentialStoring {
+
+    public func saveOpenCodeCredentials(_ credentials: OpenCodeCredentials, account: AccountSlotID) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        storage[account] = ClaudeOAuthCredentials(
+            accessToken: credentials.apiKey,
+            accountUUID: nil)
+        operationLog.append("save:\(account.rawValue)")
+    }
+
+    public func openCodeCredentials(account: AccountSlotID) -> OpenCodeCredentials? {
+        guard let stored = credentials(account: account) else { return nil }
+        return OpenCodeCredentials(apiKey: stored.accessToken)
+    }
+
+    public func deleteOpenCodeCredentials(account: AccountSlotID) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage[account] = nil
+        operationLog.append("delete:\(account.rawValue)")
+    }
+}
+
 extension InMemoryCredentialStore: CodexCredentialStoring {
 
     public func saveCodexCredentials(_ credentials: CodexOAuthCredentials, account: AccountSlotID) throws {

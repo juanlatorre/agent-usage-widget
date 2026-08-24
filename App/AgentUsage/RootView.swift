@@ -12,6 +12,7 @@ enum ProfileConnectionRouter {
     static func profileSlotID(for slotID: AccountSlotID) -> AccountSlotID? {
         if ClaudeAccountController.managedSlots.contains(slotID) { return slotID }
         if CodexAccountController.managedSlots.contains(slotID) { return slotID }
+        if OpenCodeAccountController.managedSlots.contains(slotID) { return slotID }
         return nil
     }
 }

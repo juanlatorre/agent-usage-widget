@@ -34,6 +34,8 @@ final class StatusModel {
     @ObservationIgnored private(set) var claudeManager: ClaudeConnectionManager?
     /// Codex (GPT Personal) connection/refresh orchestration; nil only in degenerate stores.
     @ObservationIgnored private(set) var codexManager: CodexConnectionManager?
+    /// OpenCode GO connection/refresh orchestration; nil only in degenerate stores.
+    @ObservationIgnored private(set) var openCodeManager: OpenCodeConnectionManager?
 
     private(set) var preferences: DisplayPreferences
     private(set) var presentations: [AccountPresentation] = []
@@ -49,12 +51,14 @@ final class StatusModel {
         preferencesStore: PreferencesStore?,
         claudeManager: ClaudeConnectionManager? = nil,
         codexManager: CodexConnectionManager? = nil,
+        openCodeManager: OpenCodeConnectionManager? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.snapshotStore = snapshotStore
         self.preferencesStore = preferencesStore
         self.claudeManager = claudeManager
         self.codexManager = codexManager
+        self.openCodeManager = openCodeManager
         self.now = now
         self.preferences = preferencesStore?.load() ?? DisplayPreferences()
         self.connectionsURL = preferencesStore.map(Self.connectionsFileURL(of:))
@@ -70,6 +74,13 @@ final class StatusModel {
         }
         if let codexManager {
             for slotID in CodexAccountController.managedSlots where codexManager.isConnected(slotID) {
+                if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                    slots[index].isConnected = true
+                }
+            }
+        }
+        if let openCodeManager {
+            for slotID in OpenCodeAccountController.managedSlots where openCodeManager.isConnected(slotID) {
                 if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
                     slots[index].isConnected = true
                 }
@@ -270,6 +281,86 @@ final class StatusModel {
             }
         }
         refreshDerivedState()
+    }
+
+    // MARK: - OpenCode connection (child 04)
+
+    func attachOpenCodeManager(_ manager: OpenCodeConnectionManager) {
+        openCodeManager = manager
+        for slotID in OpenCodeAccountController.managedSlots where manager.isConnected(slotID) {
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                slots[index].isConnected = true
+            }
+        }
+        refreshDerivedState()
+    }
+
+    public func connectOpenCodeSlot(
+        _ slotID: AccountSlotID,
+        file: URL
+    ) -> Result<Void, Error> {
+        guard let openCodeManager else { return .failure(OpenCodeConnectionManagerError.notConfigured) }
+        do {
+            try openCodeManager.connect(slotID: slotID, file: file)
+            authenticationRequiredSlots.remove(slotID)
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                slots[index].isConnected = true
+            }
+            persistConnections()
+            refreshDerivedState()
+            return .success(())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    public func connectOpenCodeSlotManually(
+        _ slotID: AccountSlotID,
+        apiKey: String
+    ) -> Result<Void, Error> {
+        guard let openCodeManager else { return .failure(OpenCodeConnectionManagerError.notConfigured) }
+        do {
+            try openCodeManager.connectManually(slotID: slotID, apiKey: apiKey)
+            authenticationRequiredSlots.remove(slotID)
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                slots[index].isConnected = true
+            }
+            persistConnections()
+            refreshDerivedState()
+            return .success(())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    public func disconnectOpenCodeSlot(_ slotID: AccountSlotID) {
+        guard let openCodeManager else { return }
+        openCodeManager.disconnect(slotID: slotID)
+        authenticationRequiredSlots.remove(slotID)
+        snapshots[slotID] = nil
+        snapshotStore?.remove(slotID: slotID)
+        if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+            slots[index].isConnected = false
+        }
+        persistConnections()
+        refreshDerivedState()
+    }
+
+    public func refreshOpenCodeSlot(_ slotID: AccountSlotID) async -> OpenCodeRefreshOutcome {
+        guard let openCodeManager else { return .failed }
+        let outcome = await openCodeManager.refresh(slotID: slotID)
+        switch outcome {
+        case let .updated(snapshot):
+            snapshots[slotID] = snapshot
+            storeSnapshot(snapshot)
+            authenticationRequiredSlots.remove(slotID)
+        case .authenticationRequired, .sourceIdentityChanged:
+            authenticationRequiredSlots.insert(slotID)
+        case .failed:
+            break
+        }
+        refreshDerivedState()
+        return outcome
     }
 
     /// Connect the GPT Personal slot to the selected Codex profile directory

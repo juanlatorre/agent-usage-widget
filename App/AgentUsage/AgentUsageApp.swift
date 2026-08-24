@@ -30,6 +30,7 @@ struct AgentUsageApp: App {
         let preferencesFile: URL?
         let claudeManager: ClaudeConnectionManager
         let codexManager: CodexConnectionManager
+        let openCodeManager: OpenCodeConnectionManager
         if uitest {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("agentusage-uitest-\(UUID().uuidString)", isDirectory: true)
@@ -43,14 +44,20 @@ struct AgentUsageApp: App {
                 controller: CodexAccountController(
                     keychain: InMemoryCredentialStore(),
                     connectionsFileURL: root.appendingPathComponent("codex-connections.json")))
-            // Optional hermetic seed: pre-connect both Claude slots and the GPT
-            // Personal slot to fixture profile directories so UI tests can
-            // exercise Connected-state actions.
+            openCodeManager = OpenCodeConnectionManager(
+                controller: OpenCodeAccountController(
+                    keychain: InMemoryCredentialStore(),
+                    connectionsFileURL: root.appendingPathComponent("opencode-connections.json")))
+            // Optional hermetic seed: pre-connect slots to fixture profile
+            // directories so UI tests can exercise Connected-state actions.
             if ProcessInfo.processInfo.environment["AGENT_USAGE_UITEST_CLAUDE_FIXTURE"] == "1" {
                 Self.seedClaudeFixtures(manager: claudeManager, root: root)
             }
             if ProcessInfo.processInfo.environment["AGENT_USAGE_UITEST_CODEX_FIXTURE"] == "1" {
                 Self.seedCodexFixture(manager: codexManager, root: root)
+            }
+            if ProcessInfo.processInfo.environment["AGENT_USAGE_UITEST_OPENCODE_FIXTURE"] == "1" {
+                Self.seedOpenCodeFixture(manager: openCodeManager, root: root)
             }
         } else {
             snapshotBase = SnapshotStore.defaultBaseURL(
@@ -86,6 +93,20 @@ struct AgentUsageApp: App {
                         connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
                             .appendingPathComponent("codex-connections.json")))
             }
+            let openCodeConnectionsFile = OpenCodeAccountController.defaultFileURL(
+                appGroupID: "group.com.juanlatorre.agent-usage")
+            if let openCodeConnectionsFile {
+                openCodeManager = OpenCodeConnectionManager(
+                    controller: OpenCodeAccountController(
+                        keychain: keychain,
+                        connectionsFileURL: openCodeConnectionsFile))
+            } else {
+                openCodeManager = OpenCodeConnectionManager(
+                    controller: OpenCodeAccountController(
+                        keychain: keychain,
+                        connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
+                            .appendingPathComponent("opencode-connections.json")))
+            }
         }
         let snapshotStore = snapshotBase.map { SnapshotStore(baseURL: $0) }
         let preferencesStore = preferencesFile.map { PreferencesStore(fileURL: $0) }
@@ -93,7 +114,8 @@ struct AgentUsageApp: App {
             snapshotStore: snapshotStore,
             preferencesStore: preferencesStore,
             claudeManager: claudeManager,
-            codexManager: codexManager)
+            codexManager: codexManager,
+            openCodeManager: openCodeManager)
         model.loadPersistedSnapshots()
         return model
     }()
@@ -131,6 +153,13 @@ private extension AgentUsageApp {
         if let insha = fixtureProfile(named: "fixture-legacy-b", token: "uitest-i", uuid: "uuid-i") {
             try? manager.connect(slotID: .claudethe team, directory: insha)
         }
+    }
+
+    static func seedOpenCodeFixture(manager: OpenCodeConnectionManager, root: URL) {
+        let file = root.appendingPathComponent("fixture-opencode-auth.json")
+        let document: [String: Any] = ["opencode-go": ["key": "uitest-opencode"]]
+        _ = try? JSONSerialization.data(withJSONObject: document).write(to: file)
+        try? manager.connect(slotID: .openCodeGO, file: file)
     }
 
     /// Creates a fixture Codex profile directory and connects the GPT Personal
