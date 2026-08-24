@@ -1,5 +1,9 @@
 # Swift package build artifacts
 .build/
+Packages/AgentUsageCore/build/
+App/build/
+# Release validation artifacts (ad-hoc archive + exports)
+.derived-validate/
 # Xcode user state
 xcuserdata/
 *.xcuserstate
