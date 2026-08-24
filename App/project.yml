@@ -23,6 +23,7 @@ targets:
       - AgentUsage
     dependencies:
       - package: AgentUsageCore
+      - target: AgentUsageWidget
     info:
       path: AgentUsage/Info.plist
       properties:
@@ -31,6 +32,31 @@ targets:
         LSMinimumSystemVersion: "14.0"
         NSHumanReadableCopyright: ""
         NSPrincipalClass: NSApplication
+
+  AgentUsageWidget:
+    type: app-extension
+    platform: macOS
+    extensionType: widget
+    sources:
+      - AgentUsageWidget
+    dependencies:
+      - package: AgentUsageCore
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
+    info:
+      path: AgentUsageWidget/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        CFBundleDisplayName: Agent Usage Widget
+        LSMinimumSystemVersion: "14.0"
+    entitlements:
+      path: AgentUsageWidget/AgentUsageWidget.entitlements
+    settings:
+      base:
+        INFOPLIST_FILE: AgentUsageWidget/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.juanlatorre.AgentUsage.widget
 
   AgentUsageTests:
     type: bundle.unit-test
