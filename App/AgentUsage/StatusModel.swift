@@ -36,6 +36,8 @@ final class StatusModel {
     @ObservationIgnored private(set) var codexManager: CodexConnectionManager?
     /// OpenCode GO connection/refresh orchestration; nil only in degenerate stores.
     @ObservationIgnored private(set) var openCodeManager: OpenCodeConnectionManager?
+    /// Command Code GOAT connection/refresh orchestration; nil only in degenerate stores.
+    @ObservationIgnored private(set) var commandCodeManager: CommandCodeConnectionManager?
 
     private(set) var preferences: DisplayPreferences
     private(set) var presentations: [AccountPresentation] = []
@@ -52,6 +54,7 @@ final class StatusModel {
         claudeManager: ClaudeConnectionManager? = nil,
         codexManager: CodexConnectionManager? = nil,
         openCodeManager: OpenCodeConnectionManager? = nil,
+        commandCodeManager: CommandCodeConnectionManager? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.snapshotStore = snapshotStore
@@ -59,6 +62,7 @@ final class StatusModel {
         self.claudeManager = claudeManager
         self.codexManager = codexManager
         self.openCodeManager = openCodeManager
+        self.commandCodeManager = commandCodeManager
         self.now = now
         self.preferences = preferencesStore?.load() ?? DisplayPreferences()
         self.connectionsURL = preferencesStore.map(Self.connectionsFileURL(of:))
@@ -81,6 +85,13 @@ final class StatusModel {
         }
         if let openCodeManager {
             for slotID in OpenCodeAccountController.managedSlots where openCodeManager.isConnected(slotID) {
+                if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                    slots[index].isConnected = true
+                }
+            }
+        }
+        if let commandCodeManager {
+            for slotID in CommandCodeAccountController.managedSlots where commandCodeManager.isConnected(slotID) {
                 if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
                     slots[index].isConnected = true
                 }
@@ -344,6 +355,80 @@ final class StatusModel {
         }
         persistConnections()
         refreshDerivedState()
+    }
+
+    // MARK: - Command Code connection (child 05)
+
+    func attachCommandCodeManager(_ manager: CommandCodeConnectionManager) {
+        commandCodeManager = manager
+        for slotID in CommandCodeAccountController.managedSlots where manager.isConnected(slotID) {
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                slots[index].isConnected = true
+            }
+        }
+        refreshDerivedState()
+    }
+
+    public func connectCommandCodeSlot(
+        _ slotID: AccountSlotID, file: URL
+    ) -> Result<Void, Error> {
+        guard let commandCodeManager else { return .failure(CommandCodeConnectionManagerError.notConfigured) }
+        do {
+            try commandCodeManager.connect(slotID: slotID, file: file)
+            authenticationRequiredSlots.remove(slotID)
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                slots[index].isConnected = true
+            }
+            persistConnections(); refreshDerivedState()
+            return .success(())
+        } catch { return .failure(error) }
+    }
+
+    public func connectCommandCodeSlotManually(
+        _ slotID: AccountSlotID, apiKey: String
+    ) -> Result<Void, Error> {
+        guard let commandCodeManager else { return .failure(CommandCodeConnectionManagerError.notConfigured) }
+        do {
+            try commandCodeManager.connectManually(slotID: slotID, apiKey: apiKey)
+            authenticationRequiredSlots.remove(slotID)
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                slots[index].isConnected = true
+            }
+            persistConnections(); refreshDerivedState()
+            return .success(())
+        } catch { return .failure(error) }
+    }
+
+    public func disconnectCommandCodeSlot(_ slotID: AccountSlotID) {
+        guard let commandCodeManager else { return }
+        commandCodeManager.disconnect(slotID: slotID)
+        authenticationRequiredSlots.remove(slotID)
+        snapshots[slotID] = nil
+        snapshotStore?.remove(slotID: slotID)
+        if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+            slots[index].isConnected = false
+        }
+        persistConnections(); refreshDerivedState()
+    }
+
+    public func refreshCommandCodeSlot(_ slotID: AccountSlotID) async -> CommandCodeRefreshOutcome {
+        guard let commandCodeManager else { return .failed }
+        let outcome = await commandCodeManager.refresh(slotID: slotID)
+        switch outcome {
+        case let .updated(snapshot):
+            snapshots[slotID] = snapshot
+            storeSnapshot(snapshot)
+            authenticationRequiredSlots.remove(slotID)
+        case .unavailable:
+            // Legacy: now maps to .authenticationRequired above; treat same.
+            fallthrough
+        case .authenticationRequired, .sourceIdentityChanged:
+            authenticationRequiredSlots.insert(slotID)
+        case .failed:
+            break
+        }
+        refreshDerivedState()
+        return outcome
     }
 
     public func refreshOpenCodeSlot(_ slotID: AccountSlotID) async -> OpenCodeRefreshOutcome {

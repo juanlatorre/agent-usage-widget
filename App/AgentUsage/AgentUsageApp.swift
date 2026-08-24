@@ -31,6 +31,7 @@ struct AgentUsageApp: App {
         let claudeManager: ClaudeConnectionManager
         let codexManager: CodexConnectionManager
         let openCodeManager: OpenCodeConnectionManager
+        let commandCodeManager: CommandCodeConnectionManager
         if uitest {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("agentusage-uitest-\(UUID().uuidString)", isDirectory: true)
@@ -48,6 +49,10 @@ struct AgentUsageApp: App {
                 controller: OpenCodeAccountController(
                     keychain: InMemoryCredentialStore(),
                     connectionsFileURL: root.appendingPathComponent("opencode-connections.json")))
+            commandCodeManager = CommandCodeConnectionManager(
+                controller: CommandCodeAccountController(
+                    keychain: InMemoryCredentialStore(),
+                    connectionsFileURL: root.appendingPathComponent("commandcode-connections.json")))
             // Optional hermetic seed: pre-connect slots to fixture profile
             // directories so UI tests can exercise Connected-state actions.
             if ProcessInfo.processInfo.environment["AGENT_USAGE_UITEST_CLAUDE_FIXTURE"] == "1" {
@@ -58,6 +63,9 @@ struct AgentUsageApp: App {
             }
             if ProcessInfo.processInfo.environment["AGENT_USAGE_UITEST_OPENCODE_FIXTURE"] == "1" {
                 Self.seedOpenCodeFixture(manager: openCodeManager, root: root)
+            }
+            if ProcessInfo.processInfo.environment["AGENT_USAGE_UITEST_COMMANDCODE_FIXTURE"] == "1" {
+                Self.seedCommandCodeFixture(manager: commandCodeManager, root: root)
             }
         } else {
             snapshotBase = SnapshotStore.defaultBaseURL(
@@ -107,6 +115,20 @@ struct AgentUsageApp: App {
                         connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
                             .appendingPathComponent("opencode-connections.json")))
             }
+            let commandCodeConnectionsFile = CommandCodeAccountController.defaultFileURL(
+                appGroupID: "group.com.juanlatorre.agent-usage")
+            if let commandCodeConnectionsFile {
+                commandCodeManager = CommandCodeConnectionManager(
+                    controller: CommandCodeAccountController(
+                        keychain: keychain,
+                        connectionsFileURL: commandCodeConnectionsFile))
+            } else {
+                commandCodeManager = CommandCodeConnectionManager(
+                    controller: CommandCodeAccountController(
+                        keychain: keychain,
+                        connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
+                            .appendingPathComponent("commandcode-connections.json")))
+            }
         }
         let snapshotStore = snapshotBase.map { SnapshotStore(baseURL: $0) }
         let preferencesStore = preferencesFile.map { PreferencesStore(fileURL: $0) }
@@ -115,7 +137,8 @@ struct AgentUsageApp: App {
             preferencesStore: preferencesStore,
             claudeManager: claudeManager,
             codexManager: codexManager,
-            openCodeManager: openCodeManager)
+            openCodeManager: openCodeManager,
+            commandCodeManager: commandCodeManager)
         model.loadPersistedSnapshots()
         return model
     }()
@@ -153,6 +176,13 @@ private extension AgentUsageApp {
         if let insha = fixtureProfile(named: "fixture-legacy-b", token: "uitest-i", uuid: "uuid-i") {
             try? manager.connect(slotID: .claudethe team, directory: insha)
         }
+    }
+
+    static func seedCommandCodeFixture(manager: CommandCodeConnectionManager, root: URL) {
+        let file = root.appendingPathComponent("fixture-commandcode-auth.json")
+        let document: [String: Any] = ["apiKey": "uitest-commandcode"]
+        _ = try? JSONSerialization.data(withJSONObject: document).write(to: file)
+        try? manager.connect(slotID: .commandCodeGOAT, file: file)
     }
 
     static func seedOpenCodeFixture(manager: OpenCodeConnectionManager, root: URL) {

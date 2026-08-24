@@ -19,9 +19,12 @@ struct AccountDetailView: View {
                     blockersSection
                 }
                 if let claudeSlot, let statusModel {
-                    if claudeSlot == .openCodeGO {
+                    switch claudeSlot {
+                    case .openCodeGO:
                         OpenCodeConnectionSection(slotID: claudeSlot, statusModel: statusModel)
-                    } else {
+                    case .commandCodeGOAT:
+                        CommandCodeConnectionSection(slotID: claudeSlot, statusModel: statusModel)
+                    default:
                         ProfileConnectionSection(slotID: claudeSlot, statusModel: statusModel)
                     }
                 }
