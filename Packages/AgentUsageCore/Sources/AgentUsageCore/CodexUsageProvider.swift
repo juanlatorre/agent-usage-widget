@@ -113,13 +113,15 @@ public struct CodexUsageProvider: Sendable {
     public static func normalize(data: Data, now: Date) throws -> [UsageWindow] {
         do {
             let payload = try JSONDecoder().decode(Payload.self, from: data)
-            guard let primary = payload.rateLimit?.primaryWindow else {
-                throw CodexUsageError.incompleteUsage("missing primary_window")
+            if let primary = payload.rateLimit?.primaryWindow,
+               let window = normalizedWindow(from: primary, now: now) {
+                return [window]
             }
-            guard let window = normalizedWindow(from: primary, now: now) else {
-                throw CodexUsageError.incompleteUsage("primary_window lacks percent/reset")
-            }
-            return [window]
+            // Transport succeeded but the required Weekly window is incomplete.
+            // Return no window so the caller can persist an UNAVAILABLE snapshot
+            // rather than treating this as a transient failure (child spec R4,
+            // parent R1/R7 precedence). Never fabricate zero usage.
+            return []
         } catch let error as CodexUsageError {
             throw error
         } catch {
@@ -137,7 +139,7 @@ public struct CodexUsageProvider: Sendable {
             return nil
         }
         guard let resetAt = parsedReset(from: primary, now: now),
-              resetAt > now else {
+              resetAt >= now else {
             return nil
         }
         var notes: [String] = []

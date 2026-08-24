@@ -204,7 +204,7 @@ struct CodexSlotModelTests {
 
     @Test func incompleteWeeklyPayloadKeepsPriorStateWithoutFabrication() async throws {
         let context = try makeContext(responder: { _ in
-            // 200 with no usable window pair — must NOT become available-at-zero.
+            // 200 with no usable window pair — honest UNAVAILABLE, never available-at-zero.
             StubURLProtocol.StubResponse(
                 status: 200,
                 body: #"{"rate_limit":{"allowed":true,"primary_window":{"used_percent":10}}}"#)
@@ -213,13 +213,14 @@ struct CodexSlotModelTests {
         assertConnect(context.model.connectCodexSlot(.gptPersonal, directory: context.codexDirectory))
 
         let outcome = await context.model.refreshCodexSlot(.gptPersonal)
-        guard case .failed = outcome else {
-            Issue.record("expected failed, got \(outcome)")
+        guard case let .updated(snapshot) = outcome else {
+            Issue.record("expected updated (empty snapshot), got \(outcome)")
             return
         }
-        // No snapshot existed before → honestly LOADING, never AVAILABLE at 0%.
+        #expect(snapshot.windows.isEmpty)
+        // First incomplete payload persists as UNAVAILABLE, never AVAILABLE at 0%.
         let presentation = context.model.presentations.first { $0.slotID == .gptPersonal }
-        #expect(presentation?.status == .loading)
+        #expect(presentation?.status == .unavailable)
     }
 
     // MARK: Disconnect isolation — I2

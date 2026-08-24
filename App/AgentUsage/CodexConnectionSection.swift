@@ -44,13 +44,13 @@ struct CodexConnectionSection: View {
 }
 
 private struct InternalSection: View {
-    @StateObject private var viewModel: ViewModel
+    @StateObject private var viewModel: CodexSectionViewModel
 
     let slotID: AccountSlotID
 
     init(slotID: AccountSlotID, statusModel: StatusModel) {
         self.slotID = slotID
-        _viewModel = StateObject(wrappedValue: ViewModel(slotID: slotID, model: statusModel))
+        _viewModel = StateObject(wrappedValue: CodexSectionViewModel(slotID: slotID, model: statusModel))
     }
 
     var body: some View {

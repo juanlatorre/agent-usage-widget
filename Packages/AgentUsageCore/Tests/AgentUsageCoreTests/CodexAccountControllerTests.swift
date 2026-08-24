@@ -295,10 +295,14 @@ struct CodexConnectionManagerTests {
         try manager.connect(slotID: .gptPersonal, directory: directory)
 
         let outcome = await manager.refresh(slotID: .gptPersonal)
-        guard case .failed = outcome else {
-            Issue.record("expected failed, got \(outcome)")
+        guard case let .updated(snapshot) = outcome else {
+            Issue.record("expected updated empty snapshot (UNAVAILABLE), got \(outcome)")
             return
         }
+        #expect(snapshot.windows.isEmpty)
+        // Through engine it derives UNAVAILABLE, never failed/auth.
+        let slot = AccountCatalog.slot(for: .gptPersonal)!
+        #expect(AvailabilityEngine.derive(slot: slot, snapshot: snapshot, now: Date()).status == .unavailable)
     }
 
     @Test func unauthorizedResponseMapsToAuthenticationRequired() async throws {

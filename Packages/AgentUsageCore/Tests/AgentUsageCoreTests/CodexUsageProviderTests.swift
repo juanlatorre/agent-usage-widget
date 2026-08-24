@@ -166,19 +166,17 @@ struct CodexNormalizationTests {
 
     private let now = Date(timeIntervalSince1970: 1_760_000_000)
 
-    /// Asserts normalization fails specifically because the weekly window is
-    /// incomplete (distinct from transport/decode failures).
-    private func assertIncompleteUsage(
+    /// Asserts normalization yields no required window (honest UNAVAILABLE)
+    /// rather than throwing — transport succeeded but data is incomplete.
+    /// Mirrors Claude contract where compactMap drops incomplete windows.
+    private func assertUnavailableEmpty(
         _ body: () throws -> [UsageWindow]
     ) {
         do {
-            _ = try body()
-            Issue.record("expected incompleteUsage failure")
-        } catch let error as CodexUsageError {
-            if case .incompleteUsage = error { return }
-            Issue.record("expected incompleteUsage, got \(error)")
+            let windows = try body()
+            #expect(windows.isEmpty, "expected empty windows for incomplete payload, got \(windows)")
         } catch {
-            Issue.record("expected incompleteUsage, got \(error)")
+            Issue.record("expected empty windows (UNAVAILABLE), got throw \(error)")
         }
     }
 
@@ -230,14 +228,19 @@ struct CodexNormalizationTests {
         #expect(relative[0].sourceDiagnostics.notes.contains("reset derived from reset_after_seconds"))
     }
 
-    @Test func ac1_alreadyElapsedRelativeResetCannotSupportCurrentClaim() {
-        // A zero/negative remaining window describes the PREVIOUS period by the
-        // time normalization runs; presenting it as current would violate the
-        // post-reset verification rule (ADR-0005), so it is incomplete data.
+    @Test func ac1_alreadyElapsedRelativeResetCannotSupportCurrentClaim() throws {
+        // reset_after_seconds == 0 means the period just expired (resetAt == now).
+        // Transport preserves it; engine's expiredByNow branch derives UNAVAILABLE
+        // pending post-reset verification (ADR-0005, F3 fix >= now).
         let zero = payload(percent: "99", resetAt: nil, resetAfter: "0")
-        assertIncompleteUsage {
-            try CodexUsageProvider.normalize(data: zero, now: now)
-        }
+        let windows = try CodexUsageProvider.normalize(data: zero, now: now)
+        #expect(windows.count == 1)
+        let weekly = try #require(windows.first)
+        #expect(weekly.resetAt == now)
+        let slot = AccountCatalog.slot(for: .gptPersonal)!
+        let snapshot = UsageSnapshot(slotID: .gptPersonal, provider: .gpt, windows: windows, capturedAt: now)
+        let presentation = AvailabilityEngine.derive(slot: slot, snapshot: snapshot, now: now)
+        #expect(presentation.status == .unavailable)
     }
 
     // MARK: AC2 — exhausted week
@@ -264,58 +267,54 @@ struct CodexNormalizationTests {
 
     // MARK: AC4 — incomplete data never fabricates availability
 
-    @Test func ac4_missingPercentYieldsNoWindowNotZero() {
+    @Test func ac4_missingPercentYieldsNoWindowNotZero() throws {
         let data = payload(percent: nil, resetAt: "1760086400", resetAfter: nil)
-        assertIncompleteUsage {
-            try CodexUsageProvider.normalize(data: data, now: now)
-        }
+        let windows = try CodexUsageProvider.normalize(data: data, now: now)
+        #expect(windows.isEmpty)
+        // Through engine: UNAVAILABLE with no fabrication of 0%.
+        let slot = AccountCatalog.slot(for: .gptPersonal)!
+        let snapshot = UsageSnapshot(slotID: .gptPersonal, provider: .gpt, windows: windows, capturedAt: now)
+        #expect(AvailabilityEngine.derive(slot: slot, snapshot: snapshot, now: now).status == .unavailable)
     }
 
-    @Test func ac4_missingResetYieldsNoWindowNeverAvailableAtZero() {
+    @Test func ac4_missingResetYieldsNoWindowNeverAvailableAtZero() throws {
         // The exact AgentBar inheritance this spec forbids (NO2/R2).
         let data = payload(percent: "0", resetAt: nil, resetAfter: nil)
-        assertIncompleteUsage {
-            try CodexUsageProvider.normalize(data: data, now: now)
-        }
+        let windows = try CodexUsageProvider.normalize(data: data, now: now)
+        #expect(windows.isEmpty)
+        let slot = AccountCatalog.slot(for: .gptPersonal)!
+        let snapshot = UsageSnapshot(slotID: .gptPersonal, provider: .gpt, windows: windows, capturedAt: now)
+        #expect(AvailabilityEngine.derive(slot: slot, snapshot: snapshot, now: now).status == .unavailable)
     }
 
-    @Test func ac4_pastOrNonpositiveResetsAreIncomplete() {
+    @Test func ac4_pastOrNonpositiveResetsAreIncomplete() throws {
         let pastEpoch = payload(percent: "50", resetAt: "1759999999", resetAfter: nil)
-        assertIncompleteUsage {
-            try CodexUsageProvider.normalize(data: pastEpoch, now: now)
-        }
+        #expect(try CodexUsageProvider.normalize(data: pastEpoch, now: now).isEmpty)
         let negativeRelative = payload(percent: "50", resetAt: nil, resetAfter: "-30")
-        assertIncompleteUsage {
-            try CodexUsageProvider.normalize(data: negativeRelative, now: now)
-        }
+        #expect(try CodexUsageProvider.normalize(data: negativeRelative, now: now).isEmpty)
     }
 
-    @Test func ac4_outOfRangePercentIsIncomplete() {
+    @Test func ac4_outOfRangePercentIsIncomplete() throws {
         let above = payload(percent: "140", resetAt: "1760086400", resetAfter: nil)
-        assertIncompleteUsage {
-            try CodexUsageProvider.normalize(data: above, now: now)
-        }
+        #expect(try CodexUsageProvider.normalize(data: above, now: now).isEmpty)
         let below = payload(percent: "-5", resetAt: "1760086400", resetAfter: nil)
-        assertIncompleteUsage {
-            try CodexUsageProvider.normalize(data: below, now: now)
-        }
+        #expect(try CodexUsageProvider.normalize(data: below, now: now).isEmpty)
     }
 
-    @Test func ac4_missingPrimaryWindowIsIncomplete() {
+    @Test func ac4_missingPrimaryWindowIsIncomplete() throws {
         let data = Data(#"{"plan_type":"pro","rate_limit":{"allowed":true}}"#.utf8)
-        assertIncompleteUsage {
-            try CodexUsageProvider.normalize(data: data, now: now)
-        }
+        #expect(try CodexUsageProvider.normalize(data: data, now: now).isEmpty)
     }
 
-    @Test func malformedPayloadIsTransportFailureNotIncomplete() {
+    @Test func malformedPayloadIsTransportFailureNotIncomplete() throws {
         #expect(throws: CodexUsageError.self) {
             try CodexUsageProvider.normalize(data: Data("not json".utf8), now: now)
         }
+        // Top-level primary_window without rate_limit is not a valid Codex
+        // payload — transport succeeded but required Weekly is missing, so
+        // normalize returns empty windows (UNAVAILABLE) rather than throwing.
         let wrongShape = Data(#"{"primary_window":{"used_percent":10}}"#.utf8)
-        #expect(throws: CodexUsageError.self) {
-            try CodexUsageProvider.normalize(data: wrongShape, now: now)
-        }
+        #expect(try CodexUsageProvider.normalize(data: wrongShape, now: now).isEmpty)
     }
 
     // MARK: R6 — extra limits cannot block v1
@@ -333,12 +332,10 @@ struct CodexNormalizationTests {
 
     // MARK: R3 — corroboration flags cannot replace a complete window
 
-    @Test func r3_limitReachedAloneDoesNotCreateAWindow() {
+    @Test func r3_limitReachedAloneDoesNotCreateAWindow() throws {
         let flaggedNoData = Data("""
         {"rate_limit":{"allowed":false,"limit_reached":true,"primary_window":null}}
         """.utf8)
-        assertIncompleteUsage {
-            try CodexUsageProvider.normalize(data: flaggedNoData, now: now)
-        }
+        #expect(try CodexUsageProvider.normalize(data: flaggedNoData, now: now).isEmpty)
     }
 }
