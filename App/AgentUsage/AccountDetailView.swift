@@ -24,6 +24,8 @@ struct AccountDetailView: View {
                         OpenCodeConnectionSection(slotID: claudeSlot, statusModel: statusModel)
                     case .commandCodeGOAT:
                         CommandCodeConnectionSection(slotID: claudeSlot, statusModel: statusModel)
+                    case .zaiCodingPlan:
+                        ZaiConnectionSection(slotID: claudeSlot, statusModel: statusModel)
                     default:
                         ProfileConnectionSection(slotID: claudeSlot, statusModel: statusModel)
                     }

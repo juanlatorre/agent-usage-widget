@@ -32,6 +32,7 @@ struct AgentUsageApp: App {
         let codexManager: CodexConnectionManager
         let openCodeManager: OpenCodeConnectionManager
         let commandCodeManager: CommandCodeConnectionManager
+        let zaiManager: ZaiConnectionManager
         if uitest {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("agentusage-uitest-\(UUID().uuidString)", isDirectory: true)
@@ -53,6 +54,10 @@ struct AgentUsageApp: App {
                 controller: CommandCodeAccountController(
                     keychain: InMemoryCredentialStore(),
                     connectionsFileURL: root.appendingPathComponent("commandcode-connections.json")))
+            zaiManager = ZaiConnectionManager(
+                controller: ZaiAccountController(
+                    keychain: InMemoryCredentialStore(),
+                    connectionsFileURL: root.appendingPathComponent("zai-connections.json")))
             // Optional hermetic seed: pre-connect slots to fixture profile
             // directories so UI tests can exercise Connected-state actions.
             if ProcessInfo.processInfo.environment["AGENT_USAGE_UITEST_CLAUDE_FIXTURE"] == "1" {
@@ -66,6 +71,9 @@ struct AgentUsageApp: App {
             }
             if ProcessInfo.processInfo.environment["AGENT_USAGE_UITEST_COMMANDCODE_FIXTURE"] == "1" {
                 Self.seedCommandCodeFixture(manager: commandCodeManager, root: root)
+            }
+            if ProcessInfo.processInfo.environment["AGENT_USAGE_UITEST_ZAI_FIXTURE"] == "1" {
+                Self.seedZaiFixture(manager: zaiManager, root: root)
             }
         } else {
             snapshotBase = SnapshotStore.defaultBaseURL(
@@ -129,6 +137,20 @@ struct AgentUsageApp: App {
                         connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
                             .appendingPathComponent("commandcode-connections.json")))
             }
+            let zaiConnectionsFile = ZaiAccountController.defaultFileURL(
+                appGroupID: "group.com.juanlatorre.agent-usage")
+            if let zaiConnectionsFile {
+                zaiManager = ZaiConnectionManager(
+                    controller: ZaiAccountController(
+                        keychain: keychain,
+                        connectionsFileURL: zaiConnectionsFile))
+            } else {
+                zaiManager = ZaiConnectionManager(
+                    controller: ZaiAccountController(
+                        keychain: keychain,
+                        connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
+                            .appendingPathComponent("zai-connections.json")))
+            }
         }
         let snapshotStore = snapshotBase.map { SnapshotStore(baseURL: $0) }
         let preferencesStore = preferencesFile.map { PreferencesStore(fileURL: $0) }
@@ -138,7 +160,8 @@ struct AgentUsageApp: App {
             claudeManager: claudeManager,
             codexManager: codexManager,
             openCodeManager: openCodeManager,
-            commandCodeManager: commandCodeManager)
+            commandCodeManager: commandCodeManager,
+            zaiManager: zaiManager)
         model.loadPersistedSnapshots()
         return model
     }()
@@ -175,6 +198,17 @@ private extension AgentUsageApp {
         }
         if let insha = fixtureProfile(named: "fixture-legacy-b", token: "uitest-i", uuid: "uuid-i") {
             try? manager.connect(slotID: .claudethe team, directory: insha)
+        }
+    }
+
+    static func seedZaiFixture(manager: ZaiConnectionManager, root: URL) {
+        // Prefer opencode auth shape so the same fixture covers local import.
+        let opencodeFile = root.appendingPathComponent("fixture-zai-opencode-auth.json")
+        let document: [String: Any] = ["zai-coding-plan": ["key": "uitest-zai"]]
+        _ = try? JSONSerialization.data(withJSONObject: document).write(to: opencodeFile)
+        // Try opencode auth file first; if not usable, try manual fallback.
+        if (try? manager.connect(slotID: .zaiCodingPlan, file: opencodeFile)) == nil {
+            try? manager.connectManually(slotID: .zaiCodingPlan, apiKey: "uitest-zai")
         }
     }
 

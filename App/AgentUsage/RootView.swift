@@ -14,6 +14,7 @@ enum ProfileConnectionRouter {
         if CodexAccountController.managedSlots.contains(slotID) { return slotID }
         if OpenCodeAccountController.managedSlots.contains(slotID) { return slotID }
         if CommandCodeAccountController.managedSlots.contains(slotID) { return slotID }
+        if ZaiAccountController.managedSlots.contains(slotID) { return slotID }
         return nil
     }
 }

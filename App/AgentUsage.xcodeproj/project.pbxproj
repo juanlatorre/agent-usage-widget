@@ -14,6 +14,7 @@
 		2F0A66B043468141AAB5834E /* StatusModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2842300CA5F05EBA8B52A18C /* StatusModelTests.swift */; };
 		341F38D5D39ADC952D3CCD5B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EADC3E38C9140961AF87BF6 /* SettingsView.swift */; };
 		43879D086D755FC4D033C245 /* AccountDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E669CC8E1ACA537B12B66955 /* AccountDetailView.swift */; };
+		45BD3B97BAC99141DBFB7FAE /* ZaiConnectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9748006B03114B40DD933B33 /* ZaiConnectionSection.swift */; };
 		5EDE7F818518D4E331AACE69 /* ClaudeSlotModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C01AD5545F0D1C1AFAE2B4A /* ClaudeSlotModelTests.swift */; };
 		951FB78A6B643120918FD706 /* CommandCodeConnectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CDCFE0C8974171F17EA0999 /* CommandCodeConnectionSection.swift */; };
 		B0BDD46A4660D294E537BBB8 /* StatusModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C93F35BD30B7535C4239365 /* StatusModel.swift */; };
@@ -57,6 +58,7 @@
 		88E50BA683782C914F957F71 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		9106949A8ADDBC7E6B25D977 /* StatusUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusUITests.swift; sourceTree = "<group>"; };
 		93D0A8E0C3CFEEFCCA55BED4 /* AgentUsageApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUsageApp.swift; sourceTree = "<group>"; };
+		9748006B03114B40DD933B33 /* ZaiConnectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZaiConnectionSection.swift; sourceTree = "<group>"; };
 		BEA65F1BA11458E21B15A531 /* AgentUsageTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentUsageTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C98A6707AB66F791641799E5 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		D1E8A457ECCE3A9DC630B037 /* AgentUsageCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AgentUsageCore; path = ../Packages/AgentUsageCore; sourceTree = SOURCE_ROOT; };
@@ -136,6 +138,7 @@
 				C98A6707AB66F791641799E5 /* RootView.swift */,
 				0EADC3E38C9140961AF87BF6 /* SettingsView.swift */,
 				7C93F35BD30B7535C4239365 /* StatusModel.swift */,
+				9748006B03114B40DD933B33 /* ZaiConnectionSection.swift */,
 			);
 			path = AgentUsage;
 			sourceTree = "<group>";
@@ -261,6 +264,7 @@
 				EED66B6739868935FCDBF91F /* RootView.swift in Sources */,
 				341F38D5D39ADC952D3CCD5B /* SettingsView.swift in Sources */,
 				B0BDD46A4660D294E537BBB8 /* StatusModel.swift in Sources */,
+				45BD3B97BAC99141DBFB7FAE /* ZaiConnectionSection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

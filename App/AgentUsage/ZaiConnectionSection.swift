@@ -1,0 +1,130 @@
+import SwiftUI
+import AgentUsageCore
+
+struct ZaiConnectionSection: View {
+    let slotID: AccountSlotID
+    let statusModel: StatusModel
+    var body: some View { InternalSection(slotID: slotID, statusModel: statusModel) }
+}
+
+private struct InternalSection: View {
+    @StateObject private var viewModel: ZaiSectionViewModel
+    let slotID: AccountSlotID
+    init(slotID: AccountSlotID, statusModel: StatusModel) {
+        self.slotID = slotID
+        _viewModel = StateObject(wrappedValue: ZaiSectionViewModel(slotID: slotID, model: statusModel))
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Profile connection").font(.headline)
+            if viewModel.isConnected {
+                HStack(spacing: 8) {
+                    Label(viewModel.sourceName ?? "Z.ai auth file", systemImage: "doc.badge.ellipsis")
+                    Spacer()
+                    Button("Reconnect") { viewModel.startReconnect() }
+                    Button("Test Connection") { viewModel.testConnection() }
+                    Button("Refresh Now") { viewModel.refreshNow() }
+                    Button("Disconnect", role: .destructive) { viewModel.disconnect() }
+                }
+                if let summary = viewModel.identitySummary {
+                    Text(summary).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Button("Connect") { viewModel.startConnect() }
+                    Button("Or enter API key") { viewModel.showingManualKey = true }
+                    if viewModel.isPicking { ProgressView().controlSize(.small) }
+                }
+                Text("Select the opencode auth.json (zai-coding-plan) or a Z.ai token file. Only the 5-hour coding window is tracked. You can also enter the key manually.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if viewModel.showingManualKey {
+                    HStack {
+                        SecureField("Z.ai API key", text: $viewModel.manualKey)
+                            .textFieldStyle(.roundedBorder).frame(maxWidth: 360)
+                        Button("Save key") { viewModel.saveManualKey() }
+                            .disabled(viewModel.manualKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("Cancel") { viewModel.cancelManualKey() }
+                    }
+                }
+            }
+            if let message = viewModel.statusMessage {
+                Text(message).font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+        .fileImporter(isPresented: $viewModel.showingFilePicker, allowedContentTypes: [.json],
+                      allowsMultipleSelection: false, onCompletion: viewModel.handlePickerResult)
+    }
+}
+
+@MainActor
+final class ZaiSectionViewModel: ObservableObject {
+    let slotID: AccountSlotID
+    private let model: StatusModel
+    @Published private(set) var sourceName: String?
+    @Published private(set) var identitySummary: String?
+    @Published private(set) var isConnected: Bool
+    @Published var statusMessage: String?
+    @Published var showingFilePicker = false
+    @Published var showingManualKey = false
+    @Published var manualKey = ""
+    var isPicking: Bool { showingFilePicker }
+    init(slotID: AccountSlotID, model: StatusModel) {
+        self.slotID = slotID; self.model = model
+        self.isConnected = model.zaiManager?.isConnected(slotID) ?? false
+        refreshDisplayState()
+    }
+    func refreshDisplayState() {
+        guard let m = model.zaiManager else { sourceName = nil; identitySummary = nil; isConnected = false; return }
+        if let c = m.connection(slotID) {
+            sourceName = c.source.fileName
+            identitySummary = "identity \(c.importedIdentity.fingerprint.prefix(8))… · imported \(c.importedAt.formatted(date: .abbreviated, time: .shortened))"
+            isConnected = true
+        } else { sourceName = nil; identitySummary = nil; isConnected = false }
+    }
+    func startConnect() { statusMessage = nil; showingManualKey = false; showingFilePicker = true }
+    func startReconnect() { statusMessage = nil; showingManualKey = false; showingFilePicker = true }
+    func saveManualKey() {
+        let k = manualKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !k.isEmpty else { return }
+        switch model.connectZaiSlotManually(slotID, apiKey: k) {
+        case .success: statusMessage = nil; showingManualKey = false; manualKey = ""
+        case .failure(let e): statusMessage = Self.message(for: e)
+        }
+        refreshDisplayState()
+    }
+    func cancelManualKey() { showingManualKey = false; manualKey = "" }
+    func testConnection() {
+        Task { @MainActor in
+            statusMessage = "Testing connection…"
+            let o = await model.refreshZaiSlot(slotID)
+            switch o {
+            case .updated: statusMessage = "Connection works."
+            case .authenticationRequired, .sourceIdentityChanged: statusMessage = "Credentials were rejected. Reconnect this account."
+            case .failed: statusMessage = "Could not reach Z.ai. Check your network and try again."
+            }
+            refreshDisplayState()
+        }
+    }
+    func refreshNow() { Task { @MainActor in _ = await model.refreshZaiSlot(slotID); refreshDisplayState() } }
+    func disconnect() { model.disconnectZaiSlot(slotID); statusMessage = nil; showingManualKey = false; manualKey = ""; refreshDisplayState() }
+    func handlePickerResult(_ r: Result<[URL], any Error>) {
+        switch r { case let .success(urls): handlePickedFile(urls.first); case .failure: handlePickedFile(nil) }
+    }
+    func handlePickedFile(_ url: URL?) {
+        guard let url else { return }
+        switch model.connectZaiSlot(slotID, file: url) {
+        case .success: statusMessage = nil
+        case .failure(let e): statusMessage = Self.message(for: e)
+        }
+        refreshDisplayState()
+    }
+    static func message(for error: Error) -> String {
+        switch error {
+        case ZaiConnectionError.noUsableCredentials: return "That file has no readable Z.ai token (zai-coding-plan)."
+        case ZaiConnectionError.selectionFailed: return "This file is already bound to another account."
+        default: return "Could not connect that file."
+        }
+    }
+}

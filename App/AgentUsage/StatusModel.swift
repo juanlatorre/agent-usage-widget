@@ -38,6 +38,7 @@ final class StatusModel {
     @ObservationIgnored private(set) var openCodeManager: OpenCodeConnectionManager?
     /// Command Code GOAT connection/refresh orchestration; nil only in degenerate stores.
     @ObservationIgnored private(set) var commandCodeManager: CommandCodeConnectionManager?
+    @ObservationIgnored private(set) var zaiManager: ZaiConnectionManager?
 
     private(set) var preferences: DisplayPreferences
     private(set) var presentations: [AccountPresentation] = []
@@ -55,6 +56,7 @@ final class StatusModel {
         codexManager: CodexConnectionManager? = nil,
         openCodeManager: OpenCodeConnectionManager? = nil,
         commandCodeManager: CommandCodeConnectionManager? = nil,
+        zaiManager: ZaiConnectionManager? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.snapshotStore = snapshotStore
@@ -63,6 +65,7 @@ final class StatusModel {
         self.codexManager = codexManager
         self.openCodeManager = openCodeManager
         self.commandCodeManager = commandCodeManager
+        self.zaiManager = zaiManager
         self.now = now
         self.preferences = preferencesStore?.load() ?? DisplayPreferences()
         self.connectionsURL = preferencesStore.map(Self.connectionsFileURL(of:))
@@ -92,6 +95,13 @@ final class StatusModel {
         }
         if let commandCodeManager {
             for slotID in CommandCodeAccountController.managedSlots where commandCodeManager.isConnected(slotID) {
+                if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                    slots[index].isConnected = true
+                }
+            }
+        }
+        if let zaiManager {
+            for slotID in ZaiAccountController.managedSlots where zaiManager.isConnected(slotID) {
                 if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
                     slots[index].isConnected = true
                 }
@@ -409,6 +419,62 @@ final class StatusModel {
             slots[index].isConnected = false
         }
         persistConnections(); refreshDerivedState()
+    }
+
+    // MARK: - Z.ai connection (child 06)
+
+    func attachZaiManager(_ manager: ZaiConnectionManager) {
+        zaiManager = manager
+        for slotID in ZaiAccountController.managedSlots where manager.isConnected(slotID) {
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) { slots[index].isConnected = true }
+        }
+        refreshDerivedState()
+    }
+
+    public func connectZaiSlot(_ slotID: AccountSlotID, file: URL) -> Result<Void, Error> {
+        guard let zaiManager else { return .failure(ZaiConnectionManagerError.notConfigured) }
+        do {
+            try zaiManager.connect(slotID: slotID, file: file)
+            authenticationRequiredSlots.remove(slotID)
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) { slots[index].isConnected = true }
+            persistConnections(); refreshDerivedState()
+            return .success(())
+        } catch { return .failure(error) }
+    }
+
+    public func connectZaiSlotManually(_ slotID: AccountSlotID, apiKey: String) -> Result<Void, Error> {
+        guard let zaiManager else { return .failure(ZaiConnectionManagerError.notConfigured) }
+        do {
+            try zaiManager.connectManually(slotID: slotID, apiKey: apiKey)
+            authenticationRequiredSlots.remove(slotID)
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) { slots[index].isConnected = true }
+            persistConnections(); refreshDerivedState()
+            return .success(())
+        } catch { return .failure(error) }
+    }
+
+    public func disconnectZaiSlot(_ slotID: AccountSlotID) {
+        guard let zaiManager else { return }
+        zaiManager.disconnect(slotID: slotID)
+        authenticationRequiredSlots.remove(slotID)
+        snapshots[slotID] = nil; snapshotStore?.remove(slotID: slotID)
+        if let index = slots.firstIndex(where: { $0.slotID == slotID }) { slots[index].isConnected = false }
+        persistConnections(); refreshDerivedState()
+    }
+
+    public func refreshZaiSlot(_ slotID: AccountSlotID) async -> ZaiRefreshOutcome {
+        guard let zaiManager else { return .failed }
+        let outcome = await zaiManager.refresh(slotID: slotID)
+        switch outcome {
+        case let .updated(snapshot):
+            snapshots[slotID] = snapshot; storeSnapshot(snapshot)
+            authenticationRequiredSlots.remove(slotID)
+        case .authenticationRequired, .sourceIdentityChanged:
+            authenticationRequiredSlots.insert(slotID)
+        case .failed: break
+        }
+        refreshDerivedState()
+        return outcome
     }
 
     public func refreshCommandCodeSlot(_ slotID: AccountSlotID) async -> CommandCodeRefreshOutcome {
