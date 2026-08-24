@@ -32,6 +32,8 @@ final class StatusModel {
     @ObservationIgnored private let connectionsURL: URL?
     /// Claude connection/refresh orchestration; nil only in degenerate stores.
     @ObservationIgnored private(set) var claudeManager: ClaudeConnectionManager?
+    /// Codex (GPT Personal) connection/refresh orchestration; nil only in degenerate stores.
+    @ObservationIgnored private(set) var codexManager: CodexConnectionManager?
 
     private(set) var preferences: DisplayPreferences
     private(set) var presentations: [AccountPresentation] = []
@@ -46,19 +48,28 @@ final class StatusModel {
         snapshotStore: SnapshotStore?,
         preferencesStore: PreferencesStore?,
         claudeManager: ClaudeConnectionManager? = nil,
+        codexManager: CodexConnectionManager? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.snapshotStore = snapshotStore
         self.preferencesStore = preferencesStore
         self.claudeManager = claudeManager
+        self.codexManager = codexManager
         self.now = now
         self.preferences = preferencesStore?.load() ?? DisplayPreferences()
         self.connectionsURL = preferencesStore.map(Self.connectionsFileURL(of:))
         self.slots = Self.loadConnections(from: connectionsURL)
-        // Persisted Claude connections are authoritative for the two Claude slots:
+        // Persisted profile connections are authoritative for their slots:
         // a slot bound to a profile directory is genuinely connected.
         if let claudeManager {
             for slotID in ClaudeAccountController.managedSlots where claudeManager.isConnected(slotID) {
+                if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                    slots[index].isConnected = true
+                }
+            }
+        }
+        if let codexManager {
+            for slotID in CodexAccountController.managedSlots where codexManager.isConnected(slotID) {
                 if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
                     slots[index].isConnected = true
                 }
@@ -245,6 +256,80 @@ final class StatusModel {
         }
         snapshots = loaded
         refreshDerivedState()
+    }
+
+    // MARK: - Codex connection (child 03)
+
+    /// Attach Codex connection management. Called after stores resolve; tests
+    /// may inject a manager over fakes.
+    func attachCodexManager(_ manager: CodexConnectionManager) {
+        codexManager = manager
+        for slotID in CodexAccountController.managedSlots where manager.isConnected(slotID) {
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                slots[index].isConnected = true
+            }
+        }
+        refreshDerivedState()
+    }
+
+    /// Connect the GPT Personal slot to the selected Codex profile directory
+    /// (explicit consent). Binding is rejected when the directory is already
+    /// bound to a Claude slot or holds no usable ChatGPT OAuth material.
+    public func connectCodexSlot(
+        _ slotID: AccountSlotID,
+        directory: URL
+    ) -> Result<Void, Error> {
+        guard let codexManager else { return .failure(CodexConnectionManagerError.notConfigured) }
+        do {
+            try codexManager.connect(slotID: slotID, directory: directory)
+            authenticationRequiredSlots.remove(slotID)
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                slots[index].isConnected = true
+            }
+            persistConnections()
+            refreshDerivedState()
+            return .success(())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// Disconnect the GPT Personal slot, removing only its app-owned credential,
+    /// bookmark record, and snapshot. The user is never logged out of Codex.
+    public func disconnectCodexSlot(_ slotID: AccountSlotID) {
+        guard let codexManager else { return }
+        codexManager.disconnect(slotID: slotID)
+        authenticationRequiredSlots.remove(slotID)
+        snapshots[slotID] = nil
+        snapshotStore?.remove(slotID: slotID)
+        if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+            slots[index].isConnected = false
+        }
+        persistConnections()
+        refreshDerivedState()
+    }
+
+    /// Refresh the GPT Personal slot through the Codex connection manager.
+    ///
+    /// Outcomes follow child spec R4 and parent R7/R11: success persists a valid
+    /// snapshot; identity loss raises AUTHENTICATION_REQUIRED; every other
+    /// failure keeps the last valid snapshot as history without fabricating usage.
+    public func refreshCodexSlot(_ slotID: AccountSlotID) async -> CodexRefreshOutcome {
+        guard let codexManager else { return .failed }
+        let outcome = await codexManager.refresh(slotID: slotID)
+        switch outcome {
+        case let .updated(snapshot):
+            snapshots[slotID] = snapshot
+            storeSnapshot(snapshot)
+            authenticationRequiredSlots.remove(slotID)
+        case .authenticationRequired, .sourceIdentityChanged:
+            // Keep the prior snapshot purely as historical context (parent R7/R11).
+            authenticationRequiredSlots.insert(slotID)
+        case .failed:
+            break
+        }
+        refreshDerivedState()
+        return outcome
     }
 
     // MARK: - Claude connections (child 02)

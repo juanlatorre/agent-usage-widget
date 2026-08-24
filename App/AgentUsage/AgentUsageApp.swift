@@ -29,6 +29,7 @@ struct AgentUsageApp: App {
         let snapshotBase: URL?
         let preferencesFile: URL?
         let claudeManager: ClaudeConnectionManager
+        let codexManager: CodexConnectionManager
         if uitest {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("agentusage-uitest-\(UUID().uuidString)", isDirectory: true)
@@ -38,10 +39,18 @@ struct AgentUsageApp: App {
                 controller: ClaudeAccountController(
                     keychain: InMemoryCredentialStore(),
                     connectionsFileURL: root.appendingPathComponent("claude-connections.json")))
-            // Optional hermetic seed: pre-connect both Claude slots to fixture
-            // profile directories so UI tests can exercise Connected-state actions.
+            codexManager = CodexConnectionManager(
+                controller: CodexAccountController(
+                    keychain: InMemoryCredentialStore(),
+                    connectionsFileURL: root.appendingPathComponent("codex-connections.json")))
+            // Optional hermetic seed: pre-connect both Claude slots and the GPT
+            // Personal slot to fixture profile directories so UI tests can
+            // exercise Connected-state actions.
             if ProcessInfo.processInfo.environment["AGENT_USAGE_UITEST_CLAUDE_FIXTURE"] == "1" {
                 Self.seedClaudeFixtures(manager: claudeManager, root: root)
+            }
+            if ProcessInfo.processInfo.environment["AGENT_USAGE_UITEST_CODEX_FIXTURE"] == "1" {
+                Self.seedCodexFixture(manager: codexManager, root: root)
             }
         } else {
             snapshotBase = SnapshotStore.defaultBaseURL(
@@ -63,13 +72,28 @@ struct AgentUsageApp: App {
                         connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
                             .appendingPathComponent("claude-connections.json")))
             }
+            let codexConnectionsFile = CodexAccountController.defaultFileURL(
+                appGroupID: "group.com.juanlatorre.agent-usage")
+            if let codexConnectionsFile {
+                codexManager = CodexConnectionManager(
+                    controller: CodexAccountController(
+                        keychain: keychain,
+                        connectionsFileURL: codexConnectionsFile))
+            } else {
+                codexManager = CodexConnectionManager(
+                    controller: CodexAccountController(
+                        keychain: keychain,
+                        connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
+                            .appendingPathComponent("codex-connections.json")))
+            }
         }
         let snapshotStore = snapshotBase.map { SnapshotStore(baseURL: $0) }
         let preferencesStore = preferencesFile.map { PreferencesStore(fileURL: $0) }
         let model = StatusModel(
             snapshotStore: snapshotStore,
             preferencesStore: preferencesStore,
-            claudeManager: claudeManager)
+            claudeManager: claudeManager,
+            codexManager: codexManager)
         model.loadPersistedSnapshots()
         return model
     }()
@@ -106,6 +130,24 @@ private extension AgentUsageApp {
         }
         if let insha = fixtureProfile(named: "fixture-legacy-b", token: "uitest-i", uuid: "uuid-i") {
             try? manager.connect(slotID: .claudethe team, directory: insha)
+        }
+    }
+
+    /// Creates a fixture Codex profile directory and connects the GPT Personal
+    /// slot through the real connection path (no network involved in connecting).
+    static func seedCodexFixture(manager: CodexConnectionManager, root: URL) {
+        let directory = root.appendingPathComponent("fixture-codex", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let document: [String: Any] = [
+                "auth_mode": "chatgpt",
+                "tokens": ["accessToken": "uitest-codex", "account_id": "uuid-codex"]
+            ]
+            try JSONSerialization.data(withJSONObject: document)
+                .write(to: directory.appendingPathComponent("auth.json"))
+            try? manager.connect(slotID: .gptPersonal, directory: directory)
+        } catch {
+            return
         }
     }
 }

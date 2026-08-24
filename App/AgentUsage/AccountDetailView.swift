@@ -5,7 +5,7 @@ import AgentUsageCore
 struct AccountDetailView: View {
     let presentation: AccountPresentation
     let displayMode: DisplayPreferences.DisplayMode
-    /// Claude slot ID when this detail belongs to a managed Claude slot.
+    /// Slot ID when this detail belongs to a profile-managed slot (Claude or Codex).
     var claudeSlot: AccountSlotID?
     /// Owning model backing the connection surface.
     var statusModel: StatusModel?
@@ -19,7 +19,7 @@ struct AccountDetailView: View {
                     blockersSection
                 }
                 if let claudeSlot, let statusModel {
-                    ClaudeConnectionSection(slotID: claudeSlot, statusModel: statusModel)
+                    ProfileConnectionSection(slotID: claudeSlot, statusModel: statusModel)
                 }
                 windowsSection
                 diagnosticsSection

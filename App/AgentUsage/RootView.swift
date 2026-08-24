@@ -1,6 +1,21 @@
 import SwiftUI
 import AgentUsageCore
 
+/// Deterministic connection routing for profile-managed slots.
+///
+/// Connection routing only — never presentation branching (parent R2): every
+/// detail view renders from generic window data regardless of this mapping.
+enum ProfileConnectionRouter {
+
+    /// The profile-managed slot ID for a slot that supports profile connection,
+    /// or nil when the slot has no v1 connection surface.
+    static func profileSlotID(for slotID: AccountSlotID) -> AccountSlotID? {
+        if ClaudeAccountController.managedSlots.contains(slotID) { return slotID }
+        if CodexAccountController.managedSlots.contains(slotID) { return slotID }
+        return nil
+    }
+}
+
 /// Root layout: stable six-slot list plus an account detail pane.
 struct RootView: View {
     @Environment(StatusModel.self) private var model
@@ -25,8 +40,7 @@ struct RootView: View {
                 AccountDetailView(
                     presentation: presentation,
                     displayMode: model.preferences.displayMode,
-                    claudeSlot: ClaudeAccountController.managedSlots.contains(presentation.slotID)
-                        ? presentation.slotID : nil,
+                    claudeSlot: ProfileConnectionRouter.profileSlotID(for: presentation.slotID),
                     statusModel: model)
             } else {
                 ContentUnavailableView("No account selected", systemImage: "rectangle.dashed")

@@ -40,3 +40,29 @@ public final class InMemoryCredentialStore: CredentialStoring, @unchecked Sendab
         credentials(account: account) != nil
     }
 }
+
+extension InMemoryCredentialStore: CodexCredentialStoring {
+
+    public func saveCodexCredentials(_ credentials: CodexOAuthCredentials, account: AccountSlotID) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        storage[account] = ClaudeOAuthCredentials(
+            accessToken: credentials.accessToken,
+            accountUUID: credentials.accountID)
+        operationLog.append("save:\(account.rawValue)")
+    }
+
+    public func codexCredentials(account: AccountSlotID) -> CodexOAuthCredentials? {
+        guard let stored = credentials(account: account) else { return nil }
+        return CodexOAuthCredentials(
+            accessToken: stored.accessToken,
+            accountID: stored.accountUUID)
+    }
+
+    public func deleteCodexCredentials(account: AccountSlotID) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage[account] = nil
+        operationLog.append("delete:\(account.rawValue)")
+    }
+}
