@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		00D5E5811745EF40F22AAFC3 /* AgentUsageCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7C5792EB10FF7C8A4E65F80C /* AgentUsageCore */; };
+		1AE84017B7AE17EE18FF26A2 /* UnifiedFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00023F8D49DD0E8F05384129 /* UnifiedFetcher.swift */; };
 		1E2D8E2D98B17A4188607401 /* CodexConnectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6094A8A45081389ED6885153 /* CodexConnectionSection.swift */; };
 		23FBBA939475A9EBAE164E7C /* ClaudeConnectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 835BB179094F92BE69416650 /* ClaudeConnectionSection.swift */; };
 		2DF388C85077104E67818E84 /* StatusUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9106949A8ADDBC7E6B25D977 /* StatusUITests.swift */; };
@@ -43,6 +44,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		00023F8D49DD0E8F05384129 /* UnifiedFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedFetcher.swift; sourceTree = "<group>"; };
 		0EADC3E38C9140961AF87BF6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		2842300CA5F05EBA8B52A18C /* StatusModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusModelTests.swift; sourceTree = "<group>"; };
 		36518780B48C1BE34EA74947 /* AgentUsage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentUsage.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -138,6 +140,7 @@
 				C98A6707AB66F791641799E5 /* RootView.swift */,
 				0EADC3E38C9140961AF87BF6 /* SettingsView.swift */,
 				7C93F35BD30B7535C4239365 /* StatusModel.swift */,
+				00023F8D49DD0E8F05384129 /* UnifiedFetcher.swift */,
 				9748006B03114B40DD933B33 /* ZaiConnectionSection.swift */,
 			);
 			path = AgentUsage;
@@ -264,6 +267,7 @@
 				EED66B6739868935FCDBF91F /* RootView.swift in Sources */,
 				341F38D5D39ADC952D3CCD5B /* SettingsView.swift in Sources */,
 				B0BDD46A4660D294E537BBB8 /* StatusModel.swift in Sources */,
+				1AE84017B7AE17EE18FF26A2 /* UnifiedFetcher.swift in Sources */,
 				45BD3B97BAC99141DBFB7FAE /* ZaiConnectionSection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

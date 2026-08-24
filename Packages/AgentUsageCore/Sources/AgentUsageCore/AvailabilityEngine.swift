@@ -110,11 +110,16 @@ public enum AvailabilityEngine {
     ///   - authenticationRequired: refresh-layer signal that credentials are
     ///     missing or were rejected. Outranks every other state (parent R7);
     ///     any snapshot remains visible only as historical context.
+    /// R5: transient failure with a fresh-enough historical snapshot.
+    /// `failedAt` is the time of the failed refresh attempt. When `now - failedAt < 15m`,
+    /// the presentation is .error; once 15m has elapsed it degrades to .unavailable.
+    /// The snapshot itself remains historical — blockers/availability are suppressed.
     public static func derive(
         slot: AccountSlot,
         snapshot: UsageSnapshot?,
         now: Date,
-        authenticationRequired: Bool = false
+        authenticationRequired: Bool = false,
+        transientFailureAt: Date? = nil
     ) -> AccountPresentation {
         if authenticationRequired {
             let age = snapshot?.age(at: now) ?? 0
@@ -126,6 +131,28 @@ public enum AvailabilityEngine {
                 snapshotAge: age,
                 historicalWindows: snapshot?.windows ?? [],
                 diagnosticNotes: notes)
+        }
+
+        // R5: transient failure with history. Determine ERROR vs UNAVAILABLE by age of the failure attempt.
+        if let failedAt = transientFailureAt, let snapshot {
+            let age = snapshot.age(at: now)
+            let failureAge = max(now.timeIntervalSince(failedAt), 0)
+            var notes = sanitizedDiagnostics(from: snapshot)
+            if failureAge < snapshotFreshnessHorizon {
+                notes.append("Last refresh failed; will retry.")
+                return AccountPresentation(
+                    slotID: slot.slotID, label: slot.label, status: .error,
+                    blockers: [], limitingWindow: nil, availableAt: nil,
+                    snapshotAge: age, historicalWindows: snapshot.windows,
+                    diagnosticNotes: notes)
+            } else {
+                notes.append("Snapshot is at least 15 minutes old.")
+                return AccountPresentation(
+                    slotID: slot.slotID, label: slot.label, status: .unavailable,
+                    blockers: [], limitingWindow: nil, availableAt: nil,
+                    snapshotAge: age, historicalWindows: snapshot.windows,
+                    diagnosticNotes: notes)
+            }
         }
 
         guard let snapshot else {
@@ -288,13 +315,15 @@ public enum AvailabilityEngine {
         slots: [AccountSlot],
         snapshots: [AccountSlotID: UsageSnapshot],
         now: Date,
-        authenticationRequired: Set<AccountSlotID> = []
+        authenticationRequired: Set<AccountSlotID> = [],
+        transientFailures: [AccountSlotID: Date] = [:]
     ) -> [AccountPresentation] {
         slots.map { derive(
             slot: $0,
             snapshot: snapshots[$0.slotID],
             now: now,
-            authenticationRequired: authenticationRequired.contains($0.slotID))
+            authenticationRequired: authenticationRequired.contains($0.slotID),
+            transientFailureAt: transientFailures[$0.slotID])
         }
     }
 

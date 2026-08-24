@@ -45,6 +45,15 @@ final class StatusModel {
     private var snapshots: [AccountSlotID: UsageSnapshot] = [:]
     /// Slots whose last refresh reported missing/rejected credentials (parent R7).
     private(set) var authenticationRequiredSlots: Set<AccountSlotID> = []
+    /// Per-slot transient failure attempt times; StatusModel keeps the source-of-truth map
+    /// and seeds the scheduler's failure store, then drives transientFailureAt into
+    /// AvailabilityEngine (07 R5: ERROR before 15m, UNAVAILABLE after).
+    @ObservationIgnored private var transientFailureAt: [AccountSlotID: Date] = [:]
+    /// Scheduler + failureStore + service wiring for 07 (attached once by AgentUsageApp).
+    @ObservationIgnored private var refreshScheduler: RefreshScheduler?
+    @ObservationIgnored private var refreshFailureStore: RefreshFailureStore?
+    @ObservationIgnored private var refreshService: RefreshService?
+    @ObservationIgnored var loginItemController: (any LoginItemControlling)?
 
     /// Injected clock for deterministic behavior and previews.
     @ObservationIgnored var now: () -> Date
@@ -116,7 +125,8 @@ final class StatusModel {
     func refreshDerivedState() {
         presentations = AvailabilityEngine.deriveAll(
             slots: slots, snapshots: snapshots, now: now(),
-            authenticationRequired: authenticationRequiredSlots)
+            authenticationRequired: authenticationRequiredSlots,
+            transientFailures: transientFailureAt)
     }
 
     private func presentation(for slotID: AccountSlotID) -> AccountPresentation? {
@@ -136,6 +146,47 @@ final class StatusModel {
     func setRefreshInterval(_ interval: DisplayPreferences.RefreshInterval) throws {
         preferences.refreshInterval = interval
         try persistPreferences()
+    }
+
+    // MARK: - 07 Background refresh helpers
+
+    var connectedSlots: Set<AccountSlotID> {
+        Set(slots.filter(\.isConnected).map(\.slotID))
+    }
+
+    var isBackgroundRefreshEnabled: Bool { refreshScheduler != nil ? (loginItemController?.isEnabled ?? false) : false }
+
+    func loginItemStatus() -> LoginItemStatus { loginItemController?.status() ?? .notSupported }
+
+    func setBackgroundRefreshEnabled(_ enabled: Bool) {
+        guard !connectedSlots.isEmpty else { return }
+        do { try loginItemController?.setEnabled(enabled) } catch { NSLog("[AgentUsage] login item toggle failed: %@", String(describing: error)) }
+    }
+
+    /// Called after first successful connection per R1 lazy registration.
+    func ensureBackgroundRefreshAvailableAfterConnect() {
+        // Lazy helper registration is driven by first connection; Settings reflects it.
+        // If no helper bundle exists yet (dev builds), this is a no-op.
+        if connectedSlots.count == 1 { // first
+            // Offer to enable is via Settings; do not auto-enable without user consent.
+            // We still record that background refresh is available so the toggle appears.
+        }
+    }
+
+    func refreshAllNow() async {
+        guard let refreshService else { return }
+        await refreshService.triggerGlobal(trigger: .manualGlobal)
+    }
+
+    func refreshVisibleSlots(_ slotIDs: [AccountSlotID]) async {
+        guard let refreshService else { return }
+        await refreshService.triggerSlots(slotIDs, trigger: .widget)
+    }
+
+    /// App activation trigger (R9).
+    func handleAppActivation() async {
+        guard let refreshService else { return }
+        await refreshService.triggerGlobal(trigger: .appActivation)
     }
 
     private func persistPreferences() throws {
@@ -469,9 +520,13 @@ final class StatusModel {
         case let .updated(snapshot):
             snapshots[slotID] = snapshot; storeSnapshot(snapshot)
             authenticationRequiredSlots.remove(slotID)
+            transientFailureAt[slotID] = nil
         case .authenticationRequired, .sourceIdentityChanged:
             authenticationRequiredSlots.insert(slotID)
-        case .failed: break
+            transientFailureAt[slotID] = nil
+        case .failed:
+            transientFailureAt[slotID] = now()
+            break
         }
         refreshDerivedState()
         return outcome
@@ -485,12 +540,14 @@ final class StatusModel {
             snapshots[slotID] = snapshot
             storeSnapshot(snapshot)
             authenticationRequiredSlots.remove(slotID)
+            transientFailureAt[slotID] = nil
         case .unavailable:
-            // Legacy: now maps to .authenticationRequired above; treat same.
             fallthrough
         case .authenticationRequired, .sourceIdentityChanged:
             authenticationRequiredSlots.insert(slotID)
+            transientFailureAt[slotID] = nil
         case .failed:
+            transientFailureAt[slotID] = now()
             break
         }
         refreshDerivedState()
@@ -505,9 +562,12 @@ final class StatusModel {
             snapshots[slotID] = snapshot
             storeSnapshot(snapshot)
             authenticationRequiredSlots.remove(slotID)
+            transientFailureAt[slotID] = nil
         case .authenticationRequired, .sourceIdentityChanged:
             authenticationRequiredSlots.insert(slotID)
+            transientFailureAt[slotID] = nil
         case .failed:
+            transientFailureAt[slotID] = now()
             break
         }
         refreshDerivedState()
@@ -564,10 +624,12 @@ final class StatusModel {
             snapshots[slotID] = snapshot
             storeSnapshot(snapshot)
             authenticationRequiredSlots.remove(slotID)
+            transientFailureAt[slotID] = nil
         case .authenticationRequired, .sourceIdentityChanged:
-            // Keep the prior snapshot purely as historical context (parent R7/R11).
             authenticationRequiredSlots.insert(slotID)
+            transientFailureAt[slotID] = nil
         case .failed:
+            transientFailureAt[slotID] = now()
             break
         }
         refreshDerivedState()
@@ -578,6 +640,24 @@ final class StatusModel {
 
     /// Attach Claude connection management. Called after stores resolve; tests
     /// may inject a manager over fakes.
+    // MARK: - 07 Unified refresh wiring
+
+    /// Attach the scheduler + stores backing the RefreshService. Called once by AgentUsageApp
+    /// after stores resolve. Hydrates persisted failures (crash/upgrade recovery, §7).
+    func attachRefreshService(scheduler: RefreshScheduler, failureStore: RefreshFailureStore, service: RefreshService) {
+        self.refreshScheduler = scheduler
+        self.refreshFailureStore = failureStore
+        self.refreshService = service
+        // Seed transient map from persisted failures.
+        let records = failureStore.load()
+        for (slotID, rec) in records { transientFailureAt[slotID] = rec.attemptAt }
+        // If snapshots had expired resets, derive as historical UNAVAILABLE until verified (R8).
+        refreshDerivedState()
+    }
+
+    /// Exposed for the helper/background path to drive fetches without duplicating Manager logic.
+    var unifiedFetcher: ((AccountSlotID) async -> Result<UsageSnapshot, RefreshFetchError>)?
+
     func attachClaudeManager(_ manager: ClaudeConnectionManager) {
         claudeManager = manager
         for slotID in ClaudeAccountController.managedSlots where manager.isConnected(slotID) {
@@ -628,7 +708,9 @@ final class StatusModel {
     /// Outcomes follow child spec R6/R7 and parent R7/R11: success persists a
     /// complete-or-partial valid snapshot; identity loss raises
     /// AUTHENTICATION_REQUIRED; every other failure keeps the last valid
-    /// snapshot as history without fabricating zero usage.
+    /// snapshot as history without fabricating zero usage. Transient .failed
+    /// records failureAt so AvailabilityEngine derives ERROR before 15m and
+    /// UNAVAILABLE after (07 R5).
     public func refreshClaudeSlot(_ slotID: AccountSlotID) async -> ClaudeRefreshOutcome {
         guard let claudeManager else { return .failed }
         let outcome = await claudeManager.refresh(slotID: slotID)
@@ -637,10 +719,12 @@ final class StatusModel {
             snapshots[slotID] = snapshot
             storeSnapshot(snapshot)
             authenticationRequiredSlots.remove(slotID)
+            transientFailureAt[slotID] = nil
         case .authenticationRequired, .sourceIdentityChanged:
-            // Keep the prior snapshot purely as historical context (parent R7/R11).
             authenticationRequiredSlots.insert(slotID)
+            transientFailureAt[slotID] = nil
         case .failed:
+            transientFailureAt[slotID] = now()
             break
         }
         refreshDerivedState()

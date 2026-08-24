@@ -1,10 +1,12 @@
 import SwiftUI
 import AgentUsageCore
 
-/// Global settings: Used/Remaining display mode and refresh interval.
+/// Global settings: Used/Remaining display mode, refresh interval, and background refresh.
 struct SettingsView: View {
     @Environment(StatusModel.self) private var model
     @State private var showFixtures = false
+    @State private var loginItemStatus: LoginItemStatus = .unknown("loading")
+    @State private var backgroundEnabled: Bool = false
 
     var body: some View {
         @Bindable var model = model
@@ -30,6 +32,19 @@ struct SettingsView: View {
                 }
             }
 
+            Divider()
+            Section("Background refresh") {
+                Toggle("Keep usage fresh in background", isOn: $backgroundEnabled)
+                    .onChange(of: backgroundEnabled) { _, newValue in
+                        model.setBackgroundRefreshEnabled(newValue)
+                        refreshLoginStatus()
+                    }
+                Text(loginStatusCaption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Refresh all now") { Task { await model.refreshAllNow() } }
+                    .disabled(model.connectedSlots.isEmpty)
+            }
             Toggle("Demo fixtures", isOn: $showFixtures)
             if showFixtures {
                 FixtureControls()
@@ -37,6 +52,24 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 420)
+        .onAppear { refreshLoginStatus() }
+    }
+}
+
+private extension SettingsView {
+    func refreshLoginStatus() {
+        backgroundEnabled = model.isBackgroundRefreshEnabled
+        loginItemStatus = model.loginItemStatus()
+    }
+    var loginStatusCaption: String {
+        if model.connectedSlots.isEmpty { return "Connect an account to enable background refresh." }
+        switch loginItemStatus {
+        case .enabled: return "Background refresh will run at login. No menu-bar item is shown."
+        case .disabled: return "Background refresh is off. You can still refresh manually."
+        case .requiresApproval: return "Background item requires approval in System Settings → Login Items."
+        case .notSupported: return "Background refresh is not available on this system."
+        case .unknown(let s): return s
+        }
     }
 }
 
