@@ -9,3 +9,5 @@ xcuserdata/
 *.xcuserstate
 # macOS
 .DS_Store
+*.dmg
+AgentUsage-*.dmg
