@@ -78,15 +78,15 @@ enum PreviewFixtures {
                 diagnosticNotes: ["Last refresh failed."])
         case .notConnected:
             return AvailabilityEngine.derive(
-                slot: self.slot(.claudeLegacyA, label: "Claude (legacy A)",
+                slot: self.slot(.claude, label: "Claude",
                            windows: [.fiveHour, .weekly], connected: false),
                 snapshot: nil, now: now)
         case .authenticationRequired:
             return AvailabilityEngine.derive(
-                slot: self.slot(.claudeLegacyA, label: "Claude (legacy A)",
+                slot: self.slot(.claude, label: "Claude",
                            windows: [.fiveHour, .weekly]),
                 snapshot: UsageSnapshot(
-                    slotID: .claudeLegacyA, provider: .claude,
+                    slotID: .claude, provider: .claude,
                     windows: [window(.fiveHour, used: 48, limit: 100, resetIn: 1500),
                               window(.weekly, used: 22, limit: 100, resetIn: 3 * 86_400)],
                     capturedAt: now.addingTimeInterval(-3 * 60)),

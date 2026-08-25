@@ -148,14 +148,14 @@ import XCTest
         let manager = ClaudeConnectionManager(
             controller: try controllerWithStoredCredential(),
             provider: ClaudeUsageProvider(session: session, now: { self.now }))
-        let outcome = await manager.refresh(slotID: .claudeLegacyA)
+        let outcome = await manager.refresh(slotID: .claude)
         assertion(outcome)
     }
 
     private func controllerWithStoredCredential() throws -> ClaudeAccountController {
         let dir = try ClaudeFixtures.makeDirectory(name: "stub", token: "tok", uuid: "u")
         return ClaudeFixtures.makeController().tap {
-            _ = try? $0.connect(slotID: .claudeLegacyA, directory: dir, now: now)
+            _ = try? $0.connect(slotID: .claude, directory: dir, now: now)
         }
     }
 

@@ -80,25 +80,25 @@ import Foundation
 
     @Test func ac3_noSnapshotNotConnected() {
         let presentation = AvailabilityEngine.derive(
-            slot: slot(.claudeLegacyA, windows: [.fiveHour], connected: false),
+            slot: slot(.claude, windows: [.fiveHour], connected: false),
             snapshot: nil, now: now)
         #expect(presentation.status == .notConnected)
     }
 
     @Test func ac3_connectedWithoutSnapshotLoads() {
         let presentation = AvailabilityEngine.derive(
-            slot: slot(.claudeLegacyA, windows: [.fiveHour]),
+            slot: slot(.claude, windows: [.fiveHour]),
             snapshot: nil, now: now)
         #expect(presentation.status == .loading)
     }
 
     @Test func ac3_completeSnapshotAvailable() {
         let snapshot = UsageSnapshot(
-            slotID: .claudeLegacyA, provider: .claude,
+            slotID: .claude, provider: .claude,
             windows: [window(.fiveHour, used: 10, limit: 100, resetIn: 600)],
             capturedAt: now)
         let presentation = AvailabilityEngine.derive(
-            slot: slot(.claudeLegacyA, windows: [.fiveHour]),
+            slot: slot(.claude, windows: [.fiveHour]),
             snapshot: snapshot, now: now)
         #expect(presentation.status == .available)
         #expect(presentation.limitingWindow?.usedFraction == 0.10)
@@ -107,11 +107,11 @@ import Foundation
     @Test func ac3_incompleteSnapshotUnavailableWithPartialContext() {
         // Weekly required but only 5-hour present.
         let snapshot = UsageSnapshot(
-            slotID: .claudeLegacyA, provider: .claude,
+            slotID: .claude, provider: .claude,
             windows: [window(.fiveHour, used: 30, limit: 100, resetIn: 600)],
             capturedAt: now)
         let presentation = AvailabilityEngine.derive(
-            slot: slot(.claudeLegacyA, windows: [.fiveHour, .weekly]),
+            slot: slot(.claude, windows: [.fiveHour, .weekly]),
             snapshot: snapshot, now: now)
         #expect(presentation.status == .unavailable)
         // Complete window remains visible as partial context, never fabricated to zero.
@@ -242,12 +242,12 @@ import Foundation
     @Test func futureSnapshotTimestampTreatedAsAgeZero() {
         let captured = now.addingTimeInterval(+10 * 60) // 10 minutes in the future
         let snapshot = UsageSnapshot(
-            slotID: .claudethe team, provider: .claude,
+            slotID: .claude, provider: .claude,
             windows: [window(.fiveHour, used: 25, limit: 100,
                              resetIn: 3600 + 600)],
             capturedAt: captured)
         let presentation = AvailabilityEngine.derive(
-            slot: slot(.claudethe team, windows: [.fiveHour]),
+            slot: slot(.claude, windows: [.fiveHour]),
             snapshot: snapshot, now: now)
         #expect(presentation.snapshotAge == 0)
         #expect(presentation.status == .available)

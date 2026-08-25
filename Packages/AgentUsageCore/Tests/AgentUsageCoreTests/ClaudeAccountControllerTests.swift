@@ -18,26 +18,18 @@ import Foundation
         let inshaDir = try ClaudeFixtures.makeDirectory(
             name: "legacy-b-profile", token: "token-insha", uuid: "uuid-insha")
 
-        _ = try controller.connect(slotID: .claudeLegacyA, directory: legacyADir, now: now)
-        _ = try controller.connect(slotID: .claudethe team, directory: inshaDir, now: now)
+        _ = try controller.connect(slotID: .claude, directory: legacyADir, now: now)
+        #expect(controller.credential(for: .claude)?.accountUUID == "uuid-legacy")
+        #expect(store.count == 1)
 
-        // Two separate Keychain entries exist.
-        #expect(store.count == 2)
-
-        let legacy = controller.credential(for: .claudeLegacyA)
-        let insha = controller.credential(for: .claudethe team)
-        #expect(legacy?.accessToken == "token-legacy")
-        #expect(insha?.accessToken == "token-insha")
-
-        // Neither slot can read or overwrite the other.
-        #expect(legacy?.accountUUID == "uuid-legacy")
-        #expect(insha?.accountUUID == "uuid-insha")
+        // Reconnecting the single slot overwrites with the new identity.
+        _ = try controller.connect(slotID: .claude, directory: inshaDir, now: now)
+        #expect(controller.credential(for: .claude)?.accountUUID == "uuid-insha")
+        #expect(store.count == 1)
 
         let connections = controller.loadConnections()
-        #expect(connections[.claudeLegacyA]?.source.directoryName == "legacy-profile")
-        #expect(connections[.claudethe team]?.source.directoryName == "legacy-b-profile")
-        #expect(connections[.claudeLegacyA]?.importedIdentity.fingerprint
-                != connections[.claudethe team]?.importedIdentity.fingerprint)
+        // Last write wins for the single slot.
+        #expect(connections[.claude]?.source.directoryName == "legacy-b-profile")
     }
 
     @Test func ac1_connectPersistsNoSecretsInConnectionFile() throws {
@@ -46,7 +38,7 @@ import Foundation
             keychain: FakeCredentialStore(), connectionsFileURL: file)
         let dir = try ClaudeFixtures.makeDirectory(name: "p", token: "secret-token-value")
 
-        _ = try controller.connect(slotID: .claudeLegacyA, directory: dir, now: now)
+        _ = try controller.connect(slotID: .claude, directory: dir, now: now)
 
         let raw = try String(contentsOf: file, encoding: .utf8)
         #expect(!raw.contains("secret-token-value"))
@@ -58,13 +50,11 @@ import Foundation
         let controller = ClaudeFixtures.makeController()
         let dir = try ClaudeFixtures.makeDirectory(name: "shared", token: "t1")
 
-        _ = try controller.connect(slotID: .claudeLegacyA, directory: dir, now: now)
-        #expect(throws: ConnectionControllerError.selectionFailed("directory already bound to another slot")) {
-            _ = try controller.connect(slotID: .claudethe team, directory: dir, now: now)
-        }
-        // The second slot remains unconnected.
-        #expect(controller.isConnected(.claudethe team) == false)
-        #expect(controller.credential(for: .claudethe team) == nil)
+        _ = try controller.connect(slotID: .claude, directory: dir, now: now)
+        // Reconnecting the same directory to the same single slot succeeds (overwrite).
+        _ = try controller.connect(slotID: .claude, directory: dir, now: now)
+        #expect(controller.isConnected(.claude) == true)
+        #expect(controller.credential(for: .claude)?.accessToken == "t1")
     }
 
     // MARK: Malformed / missing sources
@@ -76,9 +66,9 @@ import Foundation
             at: empty.appendingPathComponent(".credentials.json"))
 
         #expect(throws: ConnectionControllerError.noUsableCredentials) {
-            _ = try controller.connect(slotID: .claudeLegacyA, directory: empty, now: now)
+            _ = try controller.connect(slotID: .claude, directory: empty, now: now)
         }
-        #expect(controller.isConnected(.claudeLegacyA) == false)
+        #expect(controller.isConnected(.claude) == false)
     }
 
     @Test func connectRejectsMalformedCredentialContent() throws {
@@ -87,7 +77,7 @@ import Foundation
         try Data("}".utf8).write(to: broken.appendingPathComponent(".credentials.json"))
 
         #expect(throws: ConnectionControllerError.noUsableCredentials) {
-            _ = try controller.connect(slotID: .claudeLegacyA, directory: broken, now: now)
+            _ = try controller.connect(slotID: .claude, directory: broken, now: now)
         }
     }
 
@@ -98,7 +88,7 @@ import Foundation
         let controller = ClaudeFixtures.makeController(store: store)
         let dir = try ClaudeFixtures.makeDirectory(
             name: "rotating", token: "original-token", uuid: "uuid-a")
-        _ = try controller.connect(slotID: .claudeLegacyA, directory: dir, now: now)
+        _ = try controller.connect(slotID: .claude, directory: dir, now: now)
 
         // The source rotates to a different identity.
         let rotated: [String: Any] = [
@@ -108,13 +98,13 @@ import Foundation
             .write(to: dir.appendingPathComponent(".credentials.json"))
 
         #expect(throws: ConnectionControllerError.sourceIdentityChanged) {
-            _ = try controller.synchronize(slotID: .claudeLegacyA, now: now)
+            _ = try controller.synchronize(slotID: .claude, now: now)
         }
 
         // The stored Keychain secret is NOT overwritten (AC4).
-        #expect(controller.credential(for: .claudeLegacyA)?.accessToken == "original-token")
-        #expect(!store.log.contains(where: { $0.op == "save" && $0.slot == .claudeLegacyA })
-                || store.log.filter({ $0.op == "save" && $0.slot == .claudeLegacyA }).count == 1,
+        #expect(controller.credential(for: .claude)?.accessToken == "original-token")
+        #expect(!store.log.contains(where: { $0.op == "save" && $0.slot == .claude })
+                || store.log.filter({ $0.op == "save" && $0.slot == .claude }).count == 1,
                 "only the initial import may save; identity change must not rewrite the secret")
     }
 
@@ -123,7 +113,7 @@ import Foundation
         let controller = ClaudeFixtures.makeController(store: store)
         let dir = try ClaudeFixtures.makeDirectory(
             name: "stable", token: "same-token", uuid: "uuid-same")
-        _ = try controller.connect(slotID: .claudethe team, directory: dir, now: now)
+        _ = try controller.connect(slotID: .claude, directory: dir, now: now)
 
         // Token rotation within the SAME identity (no accountUuid change).
         let refreshed: [String: Any] = [
@@ -132,29 +122,29 @@ import Foundation
         try JSONSerialization.data(withJSONObject: refreshed)
             .write(to: dir.appendingPathComponent(".credentials.json"))
 
-        let connection = try controller.synchronize(slotID: .claudethe team, now: now)
+        let connection = try controller.synchronize(slotID: .claude, now: now)
         #expect(connection.importedAt == now)
         // Same-identity refresh updates the stored material.
-        #expect(controller.credential(for: .claudethe team)?.accessToken == "same-token-v2")
+        #expect(controller.credential(for: .claude)?.accessToken == "same-token-v2")
     }
 
     @Test func syncOnUnconnectedSlotThrows() {
         let controller = ClaudeFixtures.makeController()
         #expect(throws: ConnectionControllerError.noUsableCredentials) {
-            _ = try controller.synchronize(slotID: .claudeLegacyA)
+            _ = try controller.synchronize(slotID: .claude)
         }
     }
 
     @Test func syncPropagatesUnresolvableSource() throws {
         let controller = ClaudeFixtures.makeController()
         let dir = try ClaudeFixtures.makeDirectory(name: "vanishing", token: "t")
-        _ = try controller.connect(slotID: .claudeLegacyA, directory: dir, now: now)
+        _ = try controller.connect(slotID: .claude, directory: dir, now: now)
 
         // Deleting the whole source directory makes the bookmark unresolvable.
         try FileManager.default.removeItem(at: dir.deletingLastPathComponent())
 
         #expect(throws: ClaudeProfileError.bookmarkUnresolvable) {
-            _ = try controller.synchronize(slotID: .claudeLegacyA)
+            _ = try controller.synchronize(slotID: .claude)
         }
     }
 
@@ -165,20 +155,14 @@ import Foundation
         let controller = ClaudeFixtures.makeController(store: store)
         let legacyADir = try ClaudeFixtures.makeDirectory(name: "h", token: "th")
         let inshaDir = try ClaudeFixtures.makeDirectory(name: "i", token: "ti")
-        _ = try controller.connect(slotID: .claudeLegacyA, directory: legacyADir, now: now)
-        _ = try controller.connect(slotID: .claudethe team, directory: inshaDir, now: now)
-
-        controller.disconnect(slotID: .claudeLegacyA)
-
-        // the legacy profile material gone.
-        #expect(controller.credential(for: .claudeLegacyA) == nil)
-        #expect(controller.isConnected(.claudeLegacyA) == false)
-
-        // the team untouched (I2).
-        #expect(controller.credential(for: .claudethe team)?.accessToken == "ti")
-        #expect(controller.isConnected(.claudethe team))
-
-        // External directories were never modified (R8).
+        _ = try controller.connect(slotID: .claude, directory: legacyADir, now: now)
+        controller.disconnect(slotID: .claude)
+        #expect(controller.credential(for: .claude) == nil)
+        #expect(controller.isConnected(.claude) == false)
+        // Reconnect with the second dir — single slot overwrites, external dirs untouched.
+        _ = try controller.connect(slotID: .claude, directory: inshaDir, now: now)
+        #expect(controller.credential(for: .claude)?.accessToken == "ti")
+        #expect(controller.isConnected(.claude) == true)
         #expect(FileManager.default.fileExists(
             atPath: legacyADir.appendingPathComponent(".credentials.json").path))
         #expect(FileManager.default.fileExists(
@@ -235,24 +219,16 @@ import Foundation
             }
         }
 
-        _ = try controller.connect(slotID: .claudeLegacyA, directory: dirA)
-        _ = try controller.connect(slotID: .claudethe team, directory: dirB)
+        _ = try controller.connect(slotID: .claude, directory: dirA)
+        _ = try controller.connect(slotID: .claude, directory: dirB)
         await rotationTask.value
 
-        // Each slot holds a complete credential from ITS OWN identity family.
-        let legacy = controller.credential(for: .claudeLegacyA)
-        let insha = controller.credential(for: .claudethe team)
-
-        #expect(legacy?.accessToken.hasPrefix("token-a") == true,
-                "legacy must hold an A-family token, got \(legacy?.accessToken ?? "nil")")
-        #expect(legacy?.accountUUID == "uuid-a")
-        #expect(insha?.accessToken.hasPrefix("token-b") == true,
-                "legacy-b must hold a B-family token, got \(insha?.accessToken ?? "nil")")
-        #expect(insha?.accountUUID == "uuid-b")
-
-        // Connection records agree with the imported material per slot.
+        // Single slot: concurrent connects race; final credential is from one of the families.
+        let final = controller.credential(for: .claude)
+        let okA = final?.accessToken.hasPrefix("token-a") == true && final?.accountUUID == "uuid-a"
+        let okB = final?.accessToken.hasPrefix("token-b") == true && final?.accountUUID == "uuid-b"
+        #expect(okA || okB, "final credential must be from A or B family, got \(final?.accessToken ?? "nil")")
         let connections = controller.loadConnections()
-        #expect(connections[.claudeLegacyA]?.importedIdentity.accountUUID == "uuid-a")
-        #expect(connections[.claudethe team]?.importedIdentity.accountUUID == "uuid-b")
+        #expect(connections[.claude] != nil)
     }
 }

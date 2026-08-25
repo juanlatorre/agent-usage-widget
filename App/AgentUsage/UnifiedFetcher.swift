@@ -16,7 +16,7 @@ enum UnifiedFetcher {
 
     private static func fetchSlot(_ slotID: AccountSlotID, statusModel: StatusModel) async -> Result<UsageSnapshot, RefreshFetchError> {
         switch slotID {
-        case .claudeLegacyA, .claudethe team:
+        case .claude:
             let outcome = await statusModel.refreshClaudeSlot(slotID)
             return mapClaudeOutcome(outcome)
         case .gptPersonal:

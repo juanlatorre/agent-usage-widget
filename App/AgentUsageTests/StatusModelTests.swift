@@ -55,8 +55,8 @@ struct StatusModelTests {
         let context = try makeModel()
         let model = context.model
 
-        model.applyFixture(.availablePartial, to: .claudeLegacyA)
-        #expect(model.presentations.first { $0.slotID == .claudeLegacyA }?.status == .available)
+        model.applyFixture(.availablePartial, to: .claude)
+        #expect(model.presentations.first { $0.slotID == .claude }?.status == .available)
 
         model.applyFixture(.multipleBlockers, to: .openCodeGO)
         let blocked = model.presentations.first { $0.slotID == .openCodeGO }
@@ -72,8 +72,8 @@ struct StatusModelTests {
         model.applyFixture(.staleHistory, to: .zaiCodingPlan)
         #expect(model.presentations.first { $0.slotID == .zaiCodingPlan }?.status == .unavailable)
 
-        model.applyFixture(.postResetPending, to: .claudethe team)
-        #expect(model.presentations.first { $0.slotID == .claudethe team }?.status == .unavailable)
+        model.applyFixture(.postResetPending, to: .claude)
+        #expect(model.presentations.first { $0.slotID == .claude }?.status == .unavailable)
 
         model.applyFixture(.none, to: .gptPersonal)
         #expect(model.presentations.first { $0.slotID == .gptPersonal }?.status == .loading)

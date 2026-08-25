@@ -6,7 +6,7 @@
 - **Created:** 2026-08-21
 - **Size:** LARGE-PARENT
 - **Domain impact:** NEW/TRANSVERSAL
-- **Scope:** Deliver the six predefined account slots, normalized usage and availability semantics, secure local-profile connections, resilient refresh, native widgets, and a directly distributable macOS 14 Apple Silicon app.
+- **Scope:** Deliver the five predefined account slots, normalized usage and availability semantics, secure local-profile connections, resilient refresh, native widgets, and a directly distributable macOS 14 Apple Silicon app.
 - **Parent:** none
 - **Related ADRs:** [ADR-0001](../adr/0001-distribute-a-signed-direct-download.md), [ADR-0002](../adr/0002-allow-explicit-pragmatic-provider-adapters.md), [ADR-0003](../adr/0003-refresh-through-a-resident-agent.md), [ADR-0004](../adr/0004-synchronize-selected-profiles-into-keychain.md), [ADR-0005](../adr/0005-require-post-reset-verification.md), [ADR-0006](../adr/0006-source-claude-accounts-from-separate-profile-directories.md)
 
@@ -14,7 +14,7 @@
 
 **Today:** The repository contains only a license. The user must open several tools or websites and manually interpret unrelated rate-limit windows.
 
-**After:** One companion app and native desktop widget present trustworthy normalized status for Claude (legacy A), Claude (legacy B), GPT Personal, OpenCode GO, Command Code GOAT, and Z.ai Coding Plan.
+**After:** One companion app and native desktop widget present trustworthy normalized status for Claude, GPT Personal, OpenCode GO, Command Code GOAT, and Z.ai Coding Plan.
 
 ## 2. Story
 
@@ -32,7 +32,7 @@ The user glances at the desktop and immediately sees which accounts are availabl
 
 - **O1:** Make effective availability and blocking windows understandable within seconds.
 - **O2:** Normalize any number of provider windows without provider-specific view logic.
-- **O3:** Securely connect the six predefined local account slots and fetch their current required windows.
+- **O3:** Securely connect the five predefined local account slots and fetch their current required windows.
 - **O4:** Keep snapshots fresh through automatic, manual, activation, and post-reset refresh while representing failures honestly.
 - **O5:** Provide native Small, Medium, and Large WidgetKit experiences plus an account-management app.
 - **O6:** Produce a signed/notarizable direct-download build for macOS 14 on Apple Silicon.
@@ -94,8 +94,8 @@ Initial required windows:
 
 | Account slot | Required windows |
 |---|---|
-| Claude (legacy A) | 5 hour, Weekly |
-| Claude (legacy B) | 5 hour, Weekly |
+| Claude · | 5 hour, Weekly |
+| Claude · | 5 hour, Weekly |
 | GPT · Personal | Weekly |
 | OpenCode · GO | 5 hour, Weekly, Monthly |
 | Command Code · GOAT | 5 hour, Weekly |
@@ -129,19 +129,19 @@ Initial required windows:
 WHEN a provider response succeeds
 NORMALIZE only declared required windows
 IF any required window is incomplete or invalid
-  SET current status UNAVAILABLE and retain complete values as partial context
+ SET current status UNAVAILABLE and retain complete values as partial context
 ELSE
-  SET blocking windows where remaining <= 0
-  SET AVAILABLE when blocking windows is empty, otherwise BLOCKED
-  SET availableAt to max(blocking resetAt)
-  PERSIST the valid snapshot without credentials
+ SET blocking windows where remaining <= 0
+ SET AVAILABLE when blocking windows is empty, otherwise BLOCKED
+ SET availableAt to max(blocking resetAt)
+ PERSIST the valid snapshot without credentials
 
 WHEN refresh fails
 IF credentials are missing or rejected
-  SET AUTHENTICATION_REQUIRED
+ SET AUTHENTICATION_REQUIRED
 ELSE
-  SET ERROR while historical snapshot age < 15 minutes
-  SET UNAVAILABLE once historical snapshot age >= 15 minutes
+ SET ERROR while historical snapshot age < 15 minutes
+ SET UNAVAILABLE once historical snapshot age >= 15 minutes
 NEVER synthesize zero usage
 
 WHEN a cached resetAt passes
@@ -187,7 +187,7 @@ PRESERVE identical availability logic
 
 **WHEN** each adapter fetches a successful payload
 
-**THEN** the six slots expose exactly their declared required windows and ignore extra provider limits.
+**THEN** the five slots expose exactly their declared required windows and ignore extra provider limits.
 
 ### AC5 — Refresh behavior
 

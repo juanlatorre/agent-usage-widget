@@ -41,7 +41,7 @@ final class StatusUITests: XCTestCase {
 
     func testSixSlotsAreListedWithStableOrder() throws {
         let app = launch()
-        let labels = ["Claude (legacy A)", "Claude (legacy B)", "GPT · Personal",
+        let labels = ["Claude", "Claude", "GPT · Personal",
                       "OpenCode · GO", "Command Code · GOAT", "Z.ai · Coding Plan"]
         for label in labels {
             XCTAssertTrue(rowText(for: label, in: app).waitForExistence(timeout: 15),
@@ -65,7 +65,7 @@ final class StatusUITests: XCTestCase {
     /// Claude slots surface the profile-connection management section.
     func testClaudeSlotShowsConnectSectionWhenDisconnected() throws {
         let app = launch()
-        let slotRow = rowText(for: "Claude (legacy A)", in: app)
+        let slotRow = rowText(for: "Claude", in: app)
         XCTAssertTrue(slotRow.waitForExistence(timeout: 15))
         slotRow.click()
 
@@ -82,7 +82,7 @@ final class StatusUITests: XCTestCase {
     /// actions: identity summary plus Reconnect/Test/Refresh/Disconnect controls.
     func testConnectedClaudeSlotExposesConnectionActions() throws {
         let app = launch(seededClaudeFixtures: true)
-        let slotRow = rowText(for: "Claude (legacy A)", in: app)
+        let slotRow = rowText(for: "Claude", in: app)
         XCTAssertTrue(slotRow.waitForExistence(timeout: 15))
         slotRow.click()
 
@@ -104,7 +104,7 @@ final class StatusUITests: XCTestCase {
     /// Disconnecting from the UI returns the slot to its Connect state.
     func testDisconnectReturnsSlotToConnectState() throws {
         let app = launch(seededClaudeFixtures: true)
-        let slotRow = rowText(for: "Claude (legacy B)", in: app)
+        let slotRow = rowText(for: "Claude", in: app)
         XCTAssertTrue(slotRow.waitForExistence(timeout: 15))
         slotRow.click()
 

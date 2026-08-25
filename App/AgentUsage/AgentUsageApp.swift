@@ -193,11 +193,8 @@ private extension AgentUsageApp {
             }
         }
 
-        if let legacy = fixtureProfile(named: "fixture-legacy", token: "uitest-h", uuid: "uuid-h") {
-            try? manager.connect(slotID: .claudeLegacyA, directory: legacy)
-        }
-        if let insha = fixtureProfile(named: "fixture-legacy-b", token: "uitest-i", uuid: "uuid-i") {
-            try? manager.connect(slotID: .claudethe team, directory: insha)
+        if let profile = fixtureProfile(named: "fixture-claude", token: "uitest-h", uuid: "uuid-h") {
+            try? manager.connect(slotID: .claude, directory: profile)
         }
     }
 

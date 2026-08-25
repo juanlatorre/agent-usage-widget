@@ -14,7 +14,7 @@
 
 **Today:** No application or shared usage model exists.
 
-**After:** A macOS 14 Apple Silicon app displays six slots and trustworthy status/details from normalized snapshots without provider-specific view branches.
+**After:** A macOS 14 Apple Silicon app displays five slots and trustworthy status/details from normalized snapshots without provider-specific view branches.
 
 ## 2. Story
 
@@ -27,7 +27,7 @@ The user can open the app and understand how each slot will appear in every norm
 - **O1:** Define generic account, window, snapshot, state, freshness, and display-preference contracts.
 - **O2:** Compute blocking, limiting window, `availableAt`, and status transitions deterministically.
 - **O3:** Persist snapshots/preferences atomically in an App Group-compatible store.
-- **O4:** Present all six predefined slots and detailed windows in a native SwiftUI companion app.
+- **O4:** Present all five predefined slots and detailed windows in a native SwiftUI companion app.
 
 ### Non-objectives
 
@@ -63,9 +63,9 @@ Use parent/`CONTEXT.md` terms. Stable account-slot IDs MUST be independent of di
 ```text
 LOAD catalog, preferences and snapshots
 FOR each account slot
-  VALIDATE required windows and freshness against injected now
-  DERIVE status, blockers, limiting window and availableAt
-  RENDER the same account/detail components from derived presentation data
+ VALIDATE required windows and freshness against injected now
+ DERIVE status, blockers, limiting window and availableAt
+ RENDER the same account/detail components from derived presentation data
 
 ON preference change
 PERSIST shared value

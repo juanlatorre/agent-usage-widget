@@ -140,19 +140,20 @@ struct CodexAccountControllerTests {
         // A Claude profile directory holds no Codex material: connecting it to
         // the GPT Personal slot fails as unusable BEFORE any import happens.
         _ = try context.claudeController.connect(
-            slotID: .claudeLegacyA, directory: context.claudeDirectory, now: now)
+            slotID: .claude, directory: context.claudeDirectory, now: now)
         #expect(throws: CodexConnectionError.noUsableCredentials) {
             try context.controller.connect(slotID: .gptPersonal, directory: context.claudeDirectory, now: now)
         }
         #expect(context.store.codexCredentials(account: .gptPersonal) == nil)
         #expect(!context.controller.isConnected(.gptPersonal))
 
-        // Symmetrically, a Codex auth.json is unusable for a Claude slot.
+        // Symmetrically, a Codex auth.json is unusable for a Claude slot with a fresh controller.
+        let freshClaude = ClaudeAccountController(keychain: context.store, connectionsFileURL: context.claudeConnectionsFile.deletingLastPathComponent().appendingPathComponent("claude-fresh-\(UUID().uuidString).json"))
         #expect(throws: ConnectionControllerError.noUsableCredentials) {
-            try context.claudeController.connect(slotID: .claudethe team, directory: context.codexDirectory, now: now)
+            try freshClaude.connect(slotID: .claude, directory: context.codexDirectory, now: now)
         }
-        #expect(context.store.credentials(account: .claudethe team) == nil)
-        #expect(context.controller.isConnected(.gptPersonal) == false)
+        #expect(!freshClaude.isConnected(.claude))
+        #expect(!context.controller.isConnected(.gptPersonal))
     }
 
     @Test func connectionsFileCarriesNoSecrets() throws {
@@ -213,15 +214,15 @@ struct CodexAccountControllerTests {
         let context = try makeContext()
         _ = try context.controller.connect(slotID: .gptPersonal, directory: context.codexDirectory, now: now)
         _ = try context.claudeController.connect(
-            slotID: .claudeLegacyA, directory: context.claudeDirectory, now: now)
+            slotID: .claude, directory: context.claudeDirectory, now: now)
 
         context.controller.disconnect(slotID: .gptPersonal)
 
         #expect(!context.controller.isConnected(.gptPersonal))
         #expect(context.store.codexCredentials(account: .gptPersonal) == nil)
         // The sibling provider's slot is untouched.
-        #expect(context.claudeController.isConnected(.claudeLegacyA))
-        #expect(context.store.credentials(account: .claudeLegacyA)?.accessToken == "tok-claude")
+        #expect(context.claudeController.isConnected(.claude))
+        #expect(context.store.credentials(account: .claude)?.accessToken == "tok-claude")
         // The external profile is never modified and the user stays signed in.
         #expect(FileManager.default.fileExists(
             atPath: context.codexDirectory.appendingPathComponent("auth.json").path))

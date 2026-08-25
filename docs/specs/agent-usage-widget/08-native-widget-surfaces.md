@@ -20,7 +20,7 @@ The desktop becomes the primary at-a-glance surface while remaining honest about
 
 - **O1:** Small prioritizes one selected account's availability and limiting percentage.
 - **O2:** Medium shows up to three selected accounts and their principal windows.
-- **O3:** Large shows all six accounts, all required windows/resets, and prioritizes blocked/error states.
+- **O3:** Large shows all five accounts, all required windows/resets, and prioritizes blocked/error states.
 - **O4:** Use one provider-agnostic visual system for all normal/degraded states and both display modes.
 - **O5:** Offer contextual Refresh Now in Medium/Large without exposing credentials.
 
@@ -46,7 +46,7 @@ Edit widget
 - **R1:** Visual priority is state, blocker, available-again timing, usage, per-window reset, freshness.
 - **R2:** Small displays ring, percentage, AVAILABLE/BLOCKED or degraded state, slot/provider label, and concise blocker/recovery context when blocked. It opens the app for management.
 - **R3:** Medium displays one to three selected slots. Within those slots, blocked/error/auth/unavailable precede available while preserving deterministic tie order.
-- **R4:** Large includes all six slots, sorted by the same status priority, and renders every declared required window when space permits without horizontal scrolling.
+- **R4:** Large includes all five slots, sorted by the same status priority, and renders every declared required window when space permits without horizontal scrolling.
 - **R5:** Ring percentage is the limiting window. Used/Remaining changes ring, each bar's fill, numeric label, and wording consistently.
 - **R6:** Bars identify `BLOCKING` explicitly; color is semantic state color, not provider identity.
 - **R7:** Reset countdowns use SwiftUI native timer/date presentation from resetAt. They never cause remote requests per tick.
@@ -77,7 +77,7 @@ Edit widget
 
 ### AC3 — Large complete view
 
-**GIVEN** fixtures for all six accounts and every initial window
+**GIVEN** fixtures for all five accounts and every initial window
 
 **WHEN** Large renders
 

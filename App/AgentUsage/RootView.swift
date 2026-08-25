@@ -19,11 +19,11 @@ enum ProfileConnectionRouter {
     }
 }
 
-/// Root layout: stable six-slot list plus an account detail pane.
+/// Root layout: stable five-slot list plus an account detail pane.
 struct RootView: View {
     @Environment(StatusModel.self) private var model
 
-    @State private var selection: AccountSlotID? = .claudeLegacyA
+    @State private var selection: AccountSlotID? = .claude
 
     var body: some View {
         NavigationSplitView {

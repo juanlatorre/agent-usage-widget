@@ -56,7 +56,7 @@ private struct InternalSection: View {
                         Button("Or choose folder") { viewModel.startConnect() }
                         if viewModel.isPicking { ProgressView().controlSize(.small) }
                     }
-                    Text("\u{201c}Connect from Keychain\u{201d} uses your current Claude Code session (no folder needed). \u{201c}Choose folder\u{201d} is for split the legacy profile/the team setups.")
+                    Text("\u{201c}Connect from Keychain\u{201d} uses your current Claude Code session (no folder needed). \u{201c}Choose folder\u{201d} is for alternate profile setups.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

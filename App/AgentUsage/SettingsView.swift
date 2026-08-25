@@ -76,7 +76,7 @@ private extension SettingsView {
 /// Demo fixture controls. Test infrastructure only — never shown as a provider.
 struct FixtureControls: View {
     @Environment(StatusModel.self) private var model
-    @State private var selectedSlot: AccountSlotID = .claudeLegacyA
+    @State private var selectedSlot: AccountSlotID = .claude
     @State private var scenario: StatusModel.DemoScenario = .availablePartial
 
     var body: some View {

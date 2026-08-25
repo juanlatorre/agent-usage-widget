@@ -1,17 +1,29 @@
 import Foundation
 
-/// Stable identity for one of the six predefined account slots.
+/// Stable identity for one of the five predefined account slots.
 ///
 /// Slot identities are independent of display labels and provider branding.
 public enum AccountSlotID: String, Codable, CaseIterable, Sendable, Hashable {
-    case claudeLegacyA = "claude-legacy-1"
-    case claudethe team = "claude-legacy-2"
+    case claude = "claude"
     case gptPersonal = "gpt-personal"
     case openCodeGO = "opencode-go"
     case commandCodeGOAT = "commandcode-goat"
     case zaiCodingPlan = "zai-coding-plan"
-}
 
+    /// Legacy raw values (pre-consolidation) migrate to the single claude slot.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        if raw == "claude-legacy-1" || raw == "claude-legacy-2" {
+            self = .claude
+            return
+        }
+        guard let value = AccountSlotID(rawValue: raw) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown AccountSlotID: \(raw)")
+        }
+        self = value
+    }
+}
 /// A predefined provider-and-label position the user connects to a profile source.
 public struct AccountSlot: Codable, Sendable, Hashable, Identifiable {
     public var id: AccountSlotID { slotID }
@@ -83,22 +95,17 @@ public enum UsageWindowKind: String, Codable, CaseIterable, Sendable, Hashable {
     }
 }
 
-/// Static v1 catalog of the six predefined account slots.
+/// Static v1 catalog of the five predefined account slots.
 ///
 /// The slot IDs and required-window declarations are fixed catalog data (child
 /// spec R1); they must not be derived from user input or provider responses.
 public enum AccountCatalog {
 
-    /// The six predefined slots in stable display order.
+    /// The five predefined slots in stable display order.
     public static let slots: [AccountSlot] = [
         AccountSlot(
-            slotID: .claudeLegacyA,
-            label: "Claude (legacy A)",
-            provider: .claude,
-            requiredWindows: [.fiveHour, .weekly]),
-        AccountSlot(
-            slotID: .claudethe team,
-            label: "Claude (legacy B)",
+            slotID: .claude,
+            label: "Claude",
             provider: .claude,
             requiredWindows: [.fiveHour, .weekly]),
         AccountSlot(

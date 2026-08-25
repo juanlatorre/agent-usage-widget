@@ -34,15 +34,15 @@ public struct ClaudeConnection: Codable, Sendable, Equatable {
 /// - only the user-selected directory is ever read;
 /// - import requires an explicit connect call — metadata inspection alone never
 ///   writes credentials;
-/// - the legacy profile and the team use distinct Keychain accounts, bookmarks, and
+/// - concurrent Claude slots use distinct Keychain accounts, bookmarks, and
 ///   connection records, so neither slot can read or overwrite the other;
 /// - an identity mismatch on a later sync stops synchronization without touching
 ///   the stored Keychain secret;
 /// - disconnect deletes only that slot's app-owned material.
 public struct ClaudeAccountController: Sendable {
 
-    /// The two Claude slots this controller manages.
-    public static let managedSlots: [AccountSlotID] = [.claudeLegacyA, .claudethe team]
+    /// The single Claude slot this controller manages.
+    public static let managedSlots: [AccountSlotID] = [.claude]
 
     private let keychain: any CredentialStoring
     private let fileURL: URL
@@ -175,16 +175,14 @@ public struct ClaudeAccountController: Sendable {
         return connection
     }
 
-    /// Direct import from an in-memory credential (Keychain fallback). The synthetic
-    /// directory identity keeps the legacy profile/the team distinct even when both map to
-    /// the macOS Keychain Claude entry.
+    /// Direct import from an in-memory credential (Keychain fallback).
     @discardableResult
     public func importDirect(slotID: AccountSlotID, credentials: ClaudeOAuthCredentials, directoryHint: URL?, now: Date = Date()) throws -> ClaudeConnection {
         let existing = loadConnections()
         // Synthetic identity so a second slot doesn't collide with the first.
-        let hintPath = (directoryHint?.path ?? "keychain:\(slotID.rawValue)")
+        let hintPath = (directoryHint?.path ?? "keychain:\(AccountSlotID.claude.rawValue)")
         let synthetic = ClaudeProfileSource(
-            directoryIdentity: "keychain:\(slotID.rawValue)|\(hintPath)|\(credentials.accountUUID ?? String(credentials.accessToken.prefix(8)))",
+            directoryIdentity: "keychain:\(AccountSlotID.claude.rawValue)|\(hintPath)|\(credentials.accountUUID ?? String(credentials.accessToken.prefix(8)))",
             directoryName: "Keychain (Claude)",
             bookmark: Data()
         )

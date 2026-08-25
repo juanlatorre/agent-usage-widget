@@ -5,7 +5,7 @@ import AgentUsageCore
 
 /// Asserts a connect Result succeeded, recording the error otherwise.
 @MainActor
-private func assertConnect(_ result: Result<Void, Error>) {
+func assertConnect(_ result: Result<Void, Error>) {
     if case .failure(let error) = result {
         Issue.record("connect failed: \(error)")
     }
@@ -95,19 +95,19 @@ struct ClaudeSlotModelTests {
         let context = try makeContext()
         let model = context.model
 
-        assertConnect(model.connectClaudeSlot(.claudeLegacyA, directory: context.legacyADirectory))
+        assertConnect(model.connectClaudeSlot(.claude, directory: context.legacyADirectory))
 
-        assertConnect(model.connectClaudeSlot(.claudethe team, directory: context.inshaDirectory))
+        assertConnect(model.connectClaudeSlot(.claude, directory: context.inshaDirectory))
 
-        let legacy = model.presentations.first { $0.slotID == .claudeLegacyA }
-        let insha = model.presentations.first { $0.slotID == .claudethe team }
+        let legacy = model.presentations.first { $0.slotID == .claude }
+        let insha = model.presentations.first { $0.slotID == .claude }
         // Connected without a successful refresh yet → LOADING (parent R7).
         #expect(legacy?.status == .loading)
         #expect(insha?.status == .loading)
 
         // Distinct identities per slot (AC1).
-        #expect(context.store.credentials(account: .claudeLegacyA)?.accountUUID == "uuid-h")
-        #expect(context.store.credentials(account: .claudethe team)?.accountUUID == "uuid-i")
+        #expect(context.store.credentials(account: .claude)?.accountUUID == "uuid-h")
+        #expect(context.store.credentials(account: .claude)?.accountUUID == "uuid-i")
 
         // The connection file carries no secrets.
         let raw = try String(contentsOf: context.connectionsFile, encoding: .utf8)
@@ -119,12 +119,12 @@ struct ClaudeSlotModelTests {
         let context = try makeContext()
         let model = context.model
 
-        assertConnect(model.connectClaudeSlot(.claudeLegacyA, directory: context.legacyADirectory))
+        assertConnect(model.connectClaudeSlot(.claude, directory: context.legacyADirectory))
 
-        let result = model.connectClaudeSlot(.claudethe team, directory: context.legacyADirectory)
+        let result = model.connectClaudeSlot(.claude, directory: context.legacyADirectory)
         if case .success = result { Issue.record("duplicate binding must fail") }
-        #expect(model.presentations.first { $0.slotID == .claudethe team }?.status == .notConnected)
-        #expect(context.store.credentials(account: .claudethe team) == nil)
+        #expect(model.presentations.first { $0.slotID == .claude }?.status == .notConnected)
+        #expect(context.store.credentials(account: .claude) == nil)
     }
 
     @Test func malformedDirectoryYieldsSanitizedFailure() throws {
@@ -132,13 +132,13 @@ struct ClaudeSlotModelTests {
         let broken = context.legacyADirectory.appendingPathComponent("empty-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
 
-        let result = context.model.connectClaudeSlot(.claudeLegacyA, directory: broken)
+        let result = context.model.connectClaudeSlot(.claude, directory: broken)
         guard case .failure(let error) = result else {
             Issue.record("expected failure")
             return
         }
         #expect(error is ConnectionControllerError)
-        #expect(context.model.presentations.first { $0.slotID == .claudeLegacyA }?.status == .notConnected)
+        #expect(context.model.presentations.first { $0.slotID == .claude }?.status == .notConnected)
     }
 
     // MARK: Refresh outcomes — R6/R7/R11
@@ -146,11 +146,11 @@ struct ClaudeSlotModelTests {
     @Test func transportFailureKeepsPriorSnapshotAsHistoryWithoutAuthState() async throws {
         let context = try makeContext()
         let model = context.model
-        assertConnect(model.connectClaudeSlot(.claudeLegacyA, directory: context.legacyADirectory))
+        assertConnect(model.connectClaudeSlot(.claude, directory: context.legacyADirectory))
 
         // Seed a valid prior snapshot.
         let prior = UsageSnapshot(
-            slotID: .claudeLegacyA, provider: .claude,
+            slotID: .claude, provider: .claude,
             windows: [UsageWindow(
                 id: .fiveHour, name: "5 hour", isRequired: true,
                 used: 40, limit: 100, resetAt: now.addingTimeInterval(1200)),
@@ -160,12 +160,12 @@ struct ClaudeSlotModelTests {
             capturedAt: now.addingTimeInterval(-60))
         model.storeSnapshot(prior)
 
-        let outcome = await model.refreshClaudeSlot(.claudeLegacyA)
+        let outcome = await model.refreshClaudeSlot(.claude)
         guard case .failed = outcome else {
             Issue.record("expected failed, got \(outcome)")
             return
         }
-        let presentation = model.presentations.first { $0.slotID == .claudeLegacyA }
+        let presentation = model.presentations.first { $0.slotID == .claude }
         // Transient failure keeps last valid data visible; no zero-usage fabrication.
         #expect(presentation?.status == .available)
         #expect(presentation?.historicalWindows.count == 2)
@@ -174,30 +174,30 @@ struct ClaudeSlotModelTests {
     @Test func syncRestoresMissingKeychainMaterialFromSourceWhenIdentityMatches() async throws {
         let context = try makeContext()
         let model = context.model
-        assertConnect(model.connectClaudeSlot(.claudethe team, directory: context.inshaDirectory))
+        assertConnect(model.connectClaudeSlot(.claude, directory: context.inshaDirectory))
 
         // Simulate the Keychain copy vanishing while the source stays intact:
         // synchronization must heal the stored copy before fetching (ADR-0004).
-        context.store.deleteCredentials(account: .claudethe team)
-        #expect(context.store.hasCredential(account: .claudethe team) == false)
+        context.store.deleteCredentials(account: .claude)
+        #expect(context.store.hasCredential(account: .claude) == false)
 
-        let outcome = await model.refreshClaudeSlot(.claudethe team)
+        let outcome = await model.refreshClaudeSlot(.claude)
         // Transport fails offline, but identity sync ran first and restored the
         // stored material from the bound source.
         guard case .failed = outcome else {
             Issue.record("expected failed (offline transport), got \(outcome)")
             return
         }
-        #expect(context.store.credentials(account: .claudethe team)?.accessToken == "tok-i")
+        #expect(context.store.credentials(account: .claude)?.accessToken == "tok-i")
         // No successful snapshot yet: still honestly LOADING, never auth-required.
-        let presentation = model.presentations.first { $0.slotID == .claudethe team }
+        let presentation = model.presentations.first { $0.slotID == .claude }
         #expect(presentation?.status == .loading)
     }
 
     @Test func sourceIdentityChangeStopsRefreshAndRequiresReconnect() async throws {
         let context = try makeContext()
         let model = context.model
-        assertConnect(model.connectClaudeSlot(.claudeLegacyA, directory: context.legacyADirectory))
+        assertConnect(model.connectClaudeSlot(.claude, directory: context.legacyADirectory))
 
         // Rotate identity behind the bound directory.
         let rotated: [String: Any] = [
@@ -206,11 +206,11 @@ struct ClaudeSlotModelTests {
         try JSONSerialization.data(withJSONObject: rotated)
             .write(to: context.legacyADirectory.appendingPathComponent(".credentials.json"))
 
-        let outcome = await model.refreshClaudeSlot(.claudeLegacyA)
+        let outcome = await model.refreshClaudeSlot(.claude)
         #expect(outcome == .sourceIdentityChanged)
-        #expect(model.presentations.first { $0.slotID == .claudeLegacyA }?.status == .authenticationRequired)
+        #expect(model.presentations.first { $0.slotID == .claude }?.status == .authenticationRequired)
         // The stored secret was not overwritten by the foreign identity.
-        #expect(context.store.credentials(account: .claudeLegacyA)?.accessToken == "tok-h")
+        #expect(context.store.credentials(account: .claude)?.accessToken == "tok-h")
     }
 
     // MARK: Disconnect isolation — R8/I2
@@ -218,16 +218,16 @@ struct ClaudeSlotModelTests {
     @Test func disconnectRemovesOnlyTargetSlotState() throws {
         let context = try makeContext()
         let model = context.model
-        assertConnect(model.connectClaudeSlot(.claudeLegacyA, directory: context.legacyADirectory))
+        assertConnect(model.connectClaudeSlot(.claude, directory: context.legacyADirectory))
 
-        assertConnect(model.connectClaudeSlot(.claudethe team, directory: context.inshaDirectory))
+        assertConnect(model.connectClaudeSlot(.claude, directory: context.inshaDirectory))
 
-        model.disconnectClaudeSlot(.claudeLegacyA)
+        model.disconnectClaudeSlot(.claude)
 
-        #expect(model.presentations.first { $0.slotID == .claudeLegacyA }?.status == .notConnected)
-        #expect(model.presentations.first { $0.slotID == .claudethe team }?.status == .loading)
-        #expect(context.store.hasCredential(account: .claudeLegacyA) == false)
-        #expect(context.store.hasCredential(account: .claudethe team))
+        #expect(model.presentations.first { $0.slotID == .claude }?.status == .notConnected)
+        #expect(model.presentations.first { $0.slotID == .claude }?.status == .loading)
+        #expect(context.store.hasCredential(account: .claude) == false)
+        #expect(context.store.hasCredential(account: .claude))
 
         // External profile directories remain untouched.
         #expect(FileManager.default.fileExists(
@@ -238,7 +238,7 @@ struct ClaudeSlotModelTests {
 
     @Test func persistedConnectionRestoresConnectedSlotOnFreshModel() throws {
         var context = try makeContext()
-        assertConnect(context.model.connectClaudeSlot(.claudethe team, directory: context.inshaDirectory))
+        assertConnect(context.model.connectClaudeSlot(.claude, directory: context.inshaDirectory))
 
         // A fresh model over the same stores sees the persisted binding.
         let freshManager = ClaudeConnectionManager(
@@ -252,7 +252,7 @@ struct ClaudeSlotModelTests {
                 .appendingPathComponent("preferences.json")),
             claudeManager: freshManager,
             now: { self.now })
-        #expect(freshModel.presentations.first { $0.slotID == .claudethe team }?.status == .loading)
-        #expect(freshModel.presentations.first { $0.slotID == .claudeLegacyA }?.status == .notConnected)
+        #expect(freshModel.presentations.first { $0.slotID == .claude }?.status == .loading)
+        #expect(freshModel.presentations.first { $0.slotID == .claude }?.status == .notConnected)
     }
 }

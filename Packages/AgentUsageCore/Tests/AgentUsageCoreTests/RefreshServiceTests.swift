@@ -9,7 +9,7 @@ import Foundation
         init(_ now: Date) { self.now = now }
     }
 
-    private func snapshot(slotID: AccountSlotID = .claudeLegacyA, now: Date) -> UsageSnapshot {
+    private func snapshot(slotID: AccountSlotID = .claude, now: Date) -> UsageSnapshot {
         let w = UsageWindow(id: .fiveHour, name: "5 hour", isRequired: true, used: 20, limit: 100, resetAt: now.addingTimeInterval(3600))
         return UsageSnapshot(slotID: slotID, provider: .claude, windows: [w], capturedAt: now)
     }
@@ -23,7 +23,7 @@ import Foundation
         let scheduler = RefreshScheduler(
             now: { clock.now }, random: { 0.5 },
             preferences: { DisplayPreferences(refreshInterval: .oneMinute) },
-            connectedSlots: { [.claudeLegacyA] },
+            connectedSlots: { [.claude] },
             snapshots: { [:] },
             isAuthBlocked: { _ in false })
         let snap = snapshot(now: clock.now)
@@ -34,12 +34,12 @@ import Foundation
             fetcher: { _ in .success(snap) },
             now: { clock.now })
 
-        await service.trigger(slotID: .claudeLegacyA, trigger: .manualPerAccount)
+        await service.trigger(slotID: .claude, trigger: .manualPerAccount)
 
-        if case .loaded(let stored) = snapshotStore.load(slotID: .claudeLegacyA) {
+        if case .loaded(let stored) = snapshotStore.load(slotID: .claude) {
             #expect(stored.windows.first?.used == 20)
         } else { Issue.record("snapshot not persisted") }
-        #expect(scheduler.state(for: .claudeLegacyA).failure == nil)
+        #expect(scheduler.state(for: .claude).failure == nil)
     }
 
     @Test func transientFailureDoesNotOverwriteSnapshotPreservesHistory() async {
@@ -53,11 +53,11 @@ import Foundation
         let scheduler = RefreshScheduler(
             now: { clock.now }, random: { 0.5 },
             preferences: { DisplayPreferences(refreshInterval: .oneMinute) },
-            connectedSlots: { [.claudeLegacyA] },
-            snapshots: { [.claudeLegacyA: initial] },
+            connectedSlots: { [.claude] },
+            snapshots: { [.claude: initial] },
             isAuthBlocked: { _ in false })
         // Pre-seed scheduler state as if prior success happened.
-        scheduler.finishSuccess(slotID: .claudeLegacyA, snapshot: initial)
+        scheduler.finishSuccess(slotID: .claude, snapshot: initial)
         clock.now = clock.now.addingTimeInterval(61) // past interval
         let service = RefreshService(
             scheduler: scheduler,
@@ -65,13 +65,13 @@ import Foundation
             fetcher: { _ in .failure(.transport("offline")) },
             now: { clock.now })
 
-        await service.trigger(slotID: .claudeLegacyA, trigger: .manualGlobal)
+        await service.trigger(slotID: .claude, trigger: .manualGlobal)
 
         // Snapshot unchanged.
-        if case .loaded(let stored) = snapshotStore.load(slotID: .claudeLegacyA) {
+        if case .loaded(let stored) = snapshotStore.load(slotID: .claude) {
             #expect(stored.capturedAt == initial.capturedAt)
         } else { Issue.record("expected historical snapshot preserved") }
-        #expect(scheduler.state(for: .claudeLegacyA).failure != nil)
+        #expect(scheduler.state(for: .claude).failure != nil)
     }
 
     @Test func boundedConcurrencyDoesNotBlockOtherSlots() async {
@@ -82,7 +82,7 @@ import Foundation
         let scheduler = RefreshScheduler(
             now: { clock.now }, random: { 0.5 },
             preferences: { DisplayPreferences(refreshInterval: .oneMinute) },
-            connectedSlots: { [.claudeLegacyA, .openCodeGO] },
+            connectedSlots: { [.claude, .openCodeGO] },
             snapshots: { [:] },
             isAuthBlocked: { _ in false })
         scheduler.maxConcurrentFetches = 1
@@ -92,7 +92,7 @@ import Foundation
             snapshotStore: snapshotStore,
             fetcher: { slotID in
                 // One slot hangs briefly; the other should still complete promptly.
-                if slotID == .claudeLegacyA { try? await Task.sleep(nanoseconds: 80_000_000) }
+                if slotID == .claude { try? await Task.sleep(nanoseconds: 80_000_000) }
                 calls.append(slotID)
                 return .success(UsageSnapshot(slotID: slotID, provider: .claude,
                     windows: [UsageWindow(id: .fiveHour, name: "5h", isRequired: true, used: 10, limit: 100, resetAt: clock.now.addingTimeInterval(3600))],
@@ -101,7 +101,7 @@ import Foundation
             now: { clock.now })
 
         await service.triggerGlobal(trigger: .manualGlobal)
-        #expect(calls.contains(.claudeLegacyA))
+        #expect(calls.contains(.claude))
         #expect(calls.contains(.openCodeGO))
     }
 
@@ -110,12 +110,12 @@ import Foundation
         let base = FileManager.default.temporaryDirectory.appendingPathComponent("rs-test-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let snapshotStore = SnapshotStore(baseURL: base.appendingPathComponent("sn", isDirectory: true))
-        let expiredSnap = snapshot(slotID: .claudeLegacyA, now: clock.now.addingTimeInterval(-3600))
+        let expiredSnap = snapshot(slotID: .claude, now: clock.now.addingTimeInterval(-3600))
         let scheduler = RefreshScheduler(
             now: { clock.now }, random: { 0.5 },
             preferences: { DisplayPreferences(refreshInterval: .oneMinute) },
-            connectedSlots: { [.claudeLegacyA] },
-            snapshots: { [.claudeLegacyA: expiredSnap] },
+            connectedSlots: { [.claude] },
+            snapshots: { [.claude: expiredSnap] },
             isAuthBlocked: { _ in false })
         var fetched: [AccountSlotID] = []
         let service = RefreshService(
@@ -124,6 +124,6 @@ import Foundation
             fetcher: { slotID in fetched.append(slotID); return .success(self.snapshot(now: clock.now)) },
             now: { clock.now })
         await service.handleResetBoundaries()
-        #expect(fetched == [.claudeLegacyA])
+        #expect(fetched == [.claude])
     }
 }

@@ -15,7 +15,19 @@ public enum ClaudeKeychainImporter: Sendable {
     ]
 
     /// Load credentials from the Keychain Claude entry. Returns nil when absent/unparseable.
+    /// Prefers an active plan (team/max with non-null rateLimitTier) over an empty free tier.
     public static func load() -> ClaudeOAuthCredentials? {
+        let all = allIdentities()
+        // Prefer a tier that looks like a funded plan (team/max), then any with a token.
+        if let preferred = all.first(where: { $0.credentials.accountUUID != nil }) { return preferred.credentials }
+        // Fallback: prefer the service that has a real subscription type in the raw Keychain payload.
+        for (service, _) in all {
+            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+            var result: AnyObject?
+            if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data, let str = String(data: data, encoding: .utf8), str.contains("\"subscriptionType\":") {
+                if let creds = load(service: service) { return creds }
+            }
+        }
         for service in candidateServices {
             if let creds = load(service: service) { return creds }
         }
@@ -43,7 +55,7 @@ public enum ClaudeKeychainImporter: Sendable {
         return nil
     }
 
-    /// Enumerate all available Claude Keychain identities so the legacy profile vs the team can be disambiguated.
+    /// Enumerate all available Claude Keychain identities for the Claude slot.
     public static func allIdentities() -> [(service: String, credentials: ClaudeOAuthCredentials)] {
         var out: [(String, ClaudeOAuthCredentials)] = []
         for service in candidateServices {

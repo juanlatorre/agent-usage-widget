@@ -1,4 +1,4 @@
-# PRD — Connect Claude (legacy A) and the team
+# PRD — Connect Claude and 
 
 - **Status:** READY
 - **Destination:** Both predefined Claude slots can independently import profile-directory credentials and report trustworthy 5-hour and weekly usage.
@@ -6,7 +6,7 @@
 - **Created:** 2026-08-21
 - **Size:** LARGE-CHILD
 - **Domain impact:** STABLE
-- **Scope:** Profile-directory selection/synchronization, slot-specific Keychain storage, Claude usage transport/normalization, connection management, and contract tests for the legacy profile and the team.
+- **Scope:** Profile-directory selection/synchronization, slot-specific Keychain storage, Claude usage transport/normalization, connection management, and contract tests for and .
 - **Parent:** [`../agent-usage-widget.md`](../agent-usage-widget.md)
 - **Related ADRs:** ADR-0002, ADR-0004, ADR-0006
 
@@ -20,7 +20,7 @@
 
 ### Objectives
 
-- **O1:** Connect/disconnect/reconnect the legacy profile and the team without credential crossover.
+- **O1:** Connect/disconnect/reconnect and without credential crossover.
 - **O2:** Synchronize supported Claude profile credential changes into separate app Keychain entries after consent.
 - **O3:** Normalize Claude's required windows and failure modes without fabricated usage.
 
@@ -32,7 +32,7 @@
 ## 3. Current flow → future flow
 
 ```text
-Choose the legacy profile or the team Connect
+Choose or Connect
 → select independent Claude profile directory
 → inspect non-secret identity metadata
 → confirm connection
@@ -46,7 +46,7 @@ Choose the legacy profile or the team Connect
 - Inherit every parent credential/privacy/status invariant.
 - **R1:** Directory access requires explicit user selection; only the selected directory may be watched.
 - **R2:** The source parser supports Claude Code's `claudeAiOauth` credential shape and rejects missing/malformed identity or token material.
-- **R3:** the legacy profile and the team use distinct Keychain accounts and source bookmarks. Identity mismatch on a later source change stops sync and yields `AUTHENTICATION_REQUIRED` rather than replacing the slot.
+- **R3:** and use distinct Keychain accounts and source bookmarks. Identity mismatch on a later source change stops sync and yields `AUTHENTICATION_REQUIRED` rather than replacing the slot.
 - **R4:** Fetch `GET https://api.anthropic.com/api/oauth/usage` with Bearer authorization and `anthropic-beta: oauth-2025-04-20`.
 - **R5:** Exact `five_hour` and `seven_day` keys map to the two required windows. If only suffixed variants exist, choose the most constrained variant for each canonical period; tied blockers use the latest reset. Unknown keys are ignored.
 - **R6:** Missing/null required windows or reset timestamps produce `UNAVAILABLE`, not 0%.
@@ -97,7 +97,7 @@ Choose the legacy profile or the team Connect
 
 ## 6. Errors and edge cases
 
-Unreadable/stale security-scoped bookmark, deleted directory, malformed credentials, access-token expiry, profile rotation during import, duplicate directory selection, and response variants MUST have deterministic sanitized outcomes. One directory cannot be actively bound to both Claude slots unless its stable identity matches both, which is impossible by contract.
+Unreadable/stale security-scoped bookmark, deleted directory, malformed credentials, access-token expiry, profile rotation during import, duplicate directory selection, and response variants MUST have deterministic sanitized outcomes. One directory cannot be actively bound to the Claude slot unless its stable identity matches both, which is impossible by contract.
 
 ## 7. Repository constraints and reuse
 

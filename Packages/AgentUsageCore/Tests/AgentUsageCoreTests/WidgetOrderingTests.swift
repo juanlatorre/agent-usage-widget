@@ -15,12 +15,12 @@ import Foundation
     @Test func largeSortsBlockedBeforeAvailableDeterministically() {
         let input: [AccountPresentation] = [
             presentation(slotID: .zaiCodingPlan, status: .available),
-            presentation(slotID: .claudeLegacyA, status: .blocked),
+            presentation(slotID: .claude, status: .blocked),
             presentation(slotID: .openCodeGO, status: .error),
             presentation(slotID: .gptPersonal, status: .available),
         ]
         let sorted = WidgetOrdering.sorted(input)
-        #expect(sorted.map(\.slotID) == [.claudeLegacyA, .openCodeGO, .gptPersonal, .zaiCodingPlan])
+        #expect(sorted.map(\.slotID) == [.claude, .openCodeGO, .gptPersonal, .zaiCodingPlan])
         // Available preserves catalog order.
         #expect(sorted.filter { $0.status == .available }.map(\.slotID) == [.gptPersonal, .zaiCodingPlan])
     }
@@ -38,15 +38,15 @@ import Foundation
     }
 
     @Test func configurationValidation() {
-        let small = AgentWidgetConfiguration(identifier: "a", selectedSlotIDs: [.claudeLegacyA])
+        let small = AgentWidgetConfiguration(identifier: "a", selectedSlotIDs: [.claude])
         #expect(small.isValidSmall)
         #expect(small.sanitized(for: .small) != nil)
         #expect(AgentWidgetConfiguration(identifier: "b", selectedSlotIDs: []).sanitized(for: .small) == nil)
-        #expect(AgentWidgetConfiguration(identifier: "c", selectedSlotIDs: [.claudeLegacyA, .gptPersonal]).sanitized(for: .small) == nil)
+        #expect(AgentWidgetConfiguration(identifier: "c", selectedSlotIDs: [.claude, .gptPersonal]).sanitized(for: .small) == nil)
 
-        let medium = AgentWidgetConfiguration(identifier: "m", selectedSlotIDs: [.claudeLegacyA, .gptPersonal, .openCodeGO])
+        let medium = AgentWidgetConfiguration(identifier: "m", selectedSlotIDs: [.claude, .gptPersonal, .openCodeGO])
         #expect(medium.isValidMedium)
         #expect(AgentWidgetConfiguration(identifier: "n", selectedSlotIDs: []).sanitized(for: .medium) == nil)
-        #expect(AgentWidgetConfiguration(identifier: "o", selectedSlotIDs: [.claudeLegacyA, .claudeLegacyA]).sanitized(for: .medium) == nil)
+        #expect(AgentWidgetConfiguration(identifier: "o", selectedSlotIDs: [.claude, .claude]).sanitized(for: .medium) == nil)
     }
 }

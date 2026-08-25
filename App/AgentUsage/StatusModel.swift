@@ -705,14 +705,14 @@ final class StatusModel {
     }
 
     /// One-click connect for Claude when the user doesn't have a profile-dir split.
-    /// Uses the current Keychain session and a synthetic bookmark so the legacy profile/the team
+    /// Uses the current Keychain session and a synthetic bookmark so the single Claude slot
     /// remain distinct slots (second call picks the alternate Keychain entry if available).
     public func connectClaudeFromKeychain(_ slotID: AccountSlotID) -> Result<Void, Error> {
         guard let claudeManager else { return .failure(ClaudeConnectionError.notConfigured) }
         let identities = ClaudeKeychainImporter.allIdentities()
         // Prefer an identity not already consumed by the sibling slot when possible.
         let occupied: Set<String> = {
-            guard !identities.isEmpty, let connections = claudeManager.connection(.claudeLegacyA).map({ [$0] }) else {
+            guard !identities.isEmpty, let connections = claudeManager.connection(.claude).map({ [$0] }) else {
                 // Fallback: check both slots explicitly through the manager's connection inspection
                 var s = Set<String>()
                 for id in ClaudeAccountController.managedSlots {
@@ -721,7 +721,7 @@ final class StatusModel {
                 return s
             }
             var s = Set<String>(connections.map(\.importedIdentity.fingerprint))
-            for id in ClaudeAccountController.managedSlots where id != .claudeLegacyA {
+            for id in ClaudeAccountController.managedSlots where id != .claude {
                 if let c = claudeManager.connection(id) { s.insert(c.importedIdentity.fingerprint) }
             }
             return s
