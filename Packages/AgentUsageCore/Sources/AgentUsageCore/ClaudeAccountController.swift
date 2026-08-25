@@ -175,6 +175,36 @@ public struct ClaudeAccountController: Sendable {
         return connection
     }
 
+    /// Direct import from an in-memory credential (Keychain fallback). The synthetic
+    /// directory identity keeps the legacy profile/the team distinct even when both map to
+    /// the macOS Keychain Claude entry.
+    @discardableResult
+    public func importDirect(slotID: AccountSlotID, credentials: ClaudeOAuthCredentials, directoryHint: URL?, now: Date = Date()) throws -> ClaudeConnection {
+        let existing = loadConnections()
+        // Synthetic identity so a second slot doesn't collide with the first.
+        let hintPath = (directoryHint?.path ?? "keychain:\(slotID.rawValue)")
+        let synthetic = ClaudeProfileSource(
+            directoryIdentity: "keychain:\(slotID.rawValue)|\(hintPath)|\(credentials.accountUUID ?? String(credentials.accessToken.prefix(8)))",
+            directoryName: "Keychain (Claude)",
+            bookmark: Data()
+        )
+        for (other, conn) in existing where other != slotID {
+            if conn.source.directoryIdentity == synthetic.directoryIdentity {
+                throw ConnectionControllerError.selectionFailed("directory already bound to another slot")
+            }
+        }
+        try keychain.saveCredentials(credentials, account: slotID)
+        let connection = ClaudeConnection(
+            source: synthetic,
+            importedIdentity: ClaudeIdentityMetadata(
+                accountUUID: credentials.accountUUID,
+                fingerprint: ClaudeProfileSource.fingerprint(credentials.accessToken)),
+            importedAt: now)
+        var updated = existing; updated[slotID] = connection
+        try saveConnections(updated)
+        return connection
+    }
+
     /// Synchronize the slot's Keychain credential with its source directory.
     ///
     /// Returns the refreshed connection when the source still holds the bound
@@ -187,6 +217,12 @@ public struct ClaudeAccountController: Sendable {
             throw ConnectionControllerError.noUsableCredentials
         }
 
+        // Synthetic (Keychain-imported) slots have no directory to sync; just refresh expiry.
+        if connection.source.bookmark.isEmpty {
+            // Nothing to re-read; the KeychainImporter path will be re-resolved on refresh
+            // via the manager's extra Keychain check. Keep the stored creds as-is.
+            return connection
+        }
         let current: ClaudeOAuthCredentials
         do {
             current = try connection.source.readCredentials()

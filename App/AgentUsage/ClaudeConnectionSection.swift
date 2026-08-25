@@ -50,17 +50,16 @@ private struct InternalSection: View {
                         .textSelection(.enabled)
                 }
             } else {
-                HStack {
-                    Button("Connect") { viewModel.startConnect() }
-                    if viewModel.isPicking {
-                        ProgressView()
-                            .controlSize(.small)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 10) {
+                        Button("Connect from Keychain") { viewModel.connectFromKeychain() }
+                        Button("Or choose folder") { viewModel.startConnect() }
+                        if viewModel.isPicking { ProgressView().controlSize(.small) }
                     }
+                    Text("\u{201c}Connect from Keychain\u{201d} uses your current Claude Code session (no folder needed). \u{201c}Choose folder\u{201d} is for split the legacy profile/the team setups.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Text("Select the Claude profile directory to import. Credentials are "
-                     + "copied into your Keychain; the original folder is never modified.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             if let message = viewModel.statusMessage {
@@ -128,6 +127,14 @@ final class ViewModel: ObservableObject {
     }
 
     // MARK: - Actions
+
+    func connectFromKeychain() {
+        switch model.connectClaudeFromKeychain(slotID) {
+        case .success: statusMessage = nil
+        case .failure(let error): statusMessage = Self.message(for: error)
+        }
+        refreshDisplayState()
+    }
 
     /// Open the directory picker for a fresh connection.
     func startConnect() {

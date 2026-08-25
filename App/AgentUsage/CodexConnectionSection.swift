@@ -75,18 +75,19 @@ private struct InternalSection: View {
                         .textSelection(.enabled)
                 }
             } else {
-                HStack {
-                    Button("Connect") { viewModel.startConnect() }
+                VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    Button("Connect ~/.codex") { viewModel.connectDefault() }
+                    Button("Or choose folder") { viewModel.startConnect() }
                     if viewModel.isPicking {
                         ProgressView()
                             .controlSize(.small)
                     }
                 }
-                Text("Select the Codex CLI profile directory to import. Credentials are "
-                     + "copied into your Keychain; the original folder is never modified "
-                     + "and you stay signed in to Codex.")
+                Text("\u{201c}Connect ~/.codex\u{201d} uses your local Codex session directly. \u{201c}Choose folder\u{201d} is for alternate profile dirs.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                }
             }
 
             if let message = viewModel.statusMessage {
@@ -154,6 +155,14 @@ final class CodexSectionViewModel: ObservableObject {
     }
 
     // MARK: - Actions
+
+    func connectDefault() {
+        switch model.connectCodexDefault(slotID) {
+        case .success: statusMessage = nil
+        case .failure(let error): statusMessage = Self.message(for: error)
+        }
+        refreshDisplayState()
+    }
 
     /// Open the directory picker for a fresh connection.
     func startConnect() {

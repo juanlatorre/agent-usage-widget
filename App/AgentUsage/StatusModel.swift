@@ -596,6 +596,12 @@ final class StatusModel {
         }
     }
 
+    /// One-click connect for the default ~/.codex location.
+    public func connectCodexDefault(_ slotID: AccountSlotID) -> Result<Void, Error> {
+        let defaultDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
+        return connectCodexSlot(slotID, directory: defaultDir)
+    }
+
     /// Disconnect the GPT Personal slot, removing only its app-owned credential,
     /// bookmark record, and snapshot. The user is never logged out of Codex.
     public func disconnectCodexSlot(_ slotID: AccountSlotID) {
@@ -669,6 +675,8 @@ final class StatusModel {
     }
 
     /// Connect a Claude slot to the selected profile directory (explicit consent).
+    /// Falls back to the macOS Keychain Claude session when the directory holds no
+    /// .credentials.json (modern Claude Code stores in Keychain, not ~/.claude).
     public func connectClaudeSlot(
         _ slotID: AccountSlotID,
         directory: URL
@@ -676,6 +684,57 @@ final class StatusModel {
         guard let claudeManager else { return .failure(ClaudeConnectionError.notConfigured) }
         do {
             try claudeManager.connect(slotID: slotID, directory: directory)
+            authenticationRequiredSlots.remove(slotID)
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
+                slots[index].isConnected = true
+            }
+            persistConnections()
+            refreshDerivedState()
+            return .success(())
+        } catch {
+            // Keychain fallback: many installs never write ~/.claude/.credentials.json.
+            // Try importing the real Keychain session before surfacing the file error.
+            if let creds = ClaudeKeychainImporter.load() {
+                switch connectClaudeDirectly(slotID: slotID, credentials: creds, directoryHint: directory) {
+                case .success: return .success(())
+                case .failure: break
+                }
+            }
+            return .failure(error)
+        }
+    }
+
+    /// One-click connect for Claude when the user doesn't have a profile-dir split.
+    /// Uses the current Keychain session and a synthetic bookmark so the legacy profile/the team
+    /// remain distinct slots (second call picks the alternate Keychain entry if available).
+    public func connectClaudeFromKeychain(_ slotID: AccountSlotID) -> Result<Void, Error> {
+        guard let claudeManager else { return .failure(ClaudeConnectionError.notConfigured) }
+        let identities = ClaudeKeychainImporter.allIdentities()
+        // Prefer an identity not already consumed by the sibling slot when possible.
+        let occupied: Set<String> = {
+            guard !identities.isEmpty, let connections = claudeManager.connection(.claudeLegacyA).map({ [$0] }) else {
+                // Fallback: check both slots explicitly through the manager's connection inspection
+                var s = Set<String>()
+                for id in ClaudeAccountController.managedSlots {
+                    if let c = claudeManager.connection(id) { s.insert(c.importedIdentity.fingerprint) }
+                }
+                return s
+            }
+            var s = Set<String>(connections.map(\.importedIdentity.fingerprint))
+            for id in ClaudeAccountController.managedSlots where id != .claudeLegacyA {
+                if let c = claudeManager.connection(id) { s.insert(c.importedIdentity.fingerprint) }
+            }
+            return s
+        }()
+        let pick = identities.first(where: { !occupied.contains(ClaudeProfileSource.fingerprint($0.credentials.accessToken)) }) ?? identities.first
+        guard let chosen = pick else { return .failure(ConnectionControllerError.noUsableCredentials) }
+        return connectClaudeDirectly(slotID: slotID, credentials: chosen.credentials, directoryHint: nil)
+    }
+
+    private func connectClaudeDirectly(slotID: AccountSlotID, credentials: ClaudeOAuthCredentials, directoryHint: URL?) -> Result<Void, Error> {
+        guard let claudeManager else { return .failure(ClaudeConnectionError.notConfigured) }
+        do {
+            try claudeManager.importDirect(slotID: slotID, credentials: credentials, directoryHint: directoryHint)
             authenticationRequiredSlots.remove(slotID)
             if let index = slots.firstIndex(where: { $0.slotID == slotID }) {
                 slots[index].isConnected = true

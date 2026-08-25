@@ -61,6 +61,10 @@ public final class ClaudeConnectionManager {
         _ = try controller.connect(slotID: slotID, directory: directory, now: now())
     }
 
+    public func importDirect(slotID: AccountSlotID, credentials: ClaudeOAuthCredentials, directoryHint: URL?) throws {
+        _ = try controller.importDirect(slotID: slotID, credentials: credentials, directoryHint: directoryHint, now: now())
+    }
+
     /// Disconnect: removes only this slot's app-owned material (R8).
     public func disconnect(slotID: AccountSlotID) {
         controller.disconnect(slotID: slotID)
@@ -72,6 +76,7 @@ public final class ClaudeConnectionManager {
     /// failures surface during refresh instead.
     public func isIdentityStale(_ slotID: AccountSlotID) -> Bool {
         guard let connection = controller.loadConnections()[slotID] else { return false }
+        if connection.source.bookmark.isEmpty { return false }
         guard let current = try? connection.source.readCredentials() else { return false }
         let currentIdentity = ClaudeIdentityMetadata(
             accountUUID: current.accountUUID,

@@ -118,8 +118,14 @@ struct ZaiUsageProviderTests {
     @Test func ac3_missingPercentageOrResetIsEmpty() throws {
         let noPercent: [String: Any] = ["type": "TOKENS_LIMIT", "nextResetTime": Double(1_760_000_000_000 + 3_600_000)]
         #expect(try ZaiUsageProvider.normalize(data: envelope(limits: [noPercent]), now: now).isEmpty)
+        // Missing reset with non-zero usage is still incomplete.
         let noReset: [String: Any] = ["type": "TOKENS_LIMIT", "percentage": 10]
         #expect(try ZaiUsageProvider.normalize(data: envelope(limits: [noReset]), now: now).isEmpty)
+        // Missing reset with 0% is tolerated (synthesized reset, still Available).
+        let zeroNoReset: [String: Any] = ["type": "TOKENS_LIMIT", "percentage": 0]
+        let w = try ZaiUsageProvider.normalize(data: envelope(limits: [zeroNoReset]), now: now)
+        #expect(w.count == 1)
+        #expect(w[0].used == 0)
     }
 
     @Test func ac3_percentageOutOfBoundsIsEmpty() throws {

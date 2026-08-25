@@ -103,10 +103,9 @@ public struct ZaiUsageProvider: Sendable {
         do {
             let payload = try JSONDecoder().decode(QuotaResponse.self, from: data)
 
-            // Envelope must be successful: code 0 or success true (tolerate
-            // either; both being absent is also treated as success for
-            // forward-compat when only data is present).
-            if let code = payload.code, code != 0 { return [] }
+            // Envelope must be successful. The real API returns code 200 (HTTP-like)
+            // with success true, while fixtures use code 0. Treat any 2xx code as success.
+            if let code = payload.code, code != 0, !(200...299).contains(code) { return [] }
             if payload.success == false { return [] }
 
             guard let limits = payload.data?.limits, !limits.isEmpty else { return [] }
@@ -117,15 +116,27 @@ public struct ZaiUsageProvider: Sendable {
 
             guard let entry = tokensEntries.first else { return [] }
 
+            // Percentage 0 with no nextResetTime is valid for exhausted/zero usage (e.g. capped plan at cap).
+            // For percentage == 0, tolerate missing reset and synthesize a far-future reset so the
+            // window can still be stored; the engine will derive availability from used==0 as AVAILABLE.
+            // For percentage > 0, nextResetTime is required (R3).
+            if entry.percentage == nil { return [] }
             guard let percentage = entry.percentage, percentage.isFinite,
                   percentage >= 0, percentage <= 100 else { return [] }
 
-            guard let nextResetMs = entry.nextResetTime, nextResetMs.isFinite else { return [] }
-            // nextResetTime is epoch milliseconds; must be positive and fit Date.
-            guard nextResetMs > 0, nextResetMs < 8_640_000_000_000_000 else { return [] }
-            let resetAt = Date(timeIntervalSince1970: nextResetMs / 1000)
-            guard resetAt.timeIntervalSince1970.isFinite else { return [] }
-            guard resetAt >= now else { return [] }
+            let resetAt: Date
+            if let nextResetMs = entry.nextResetTime, nextResetMs.isFinite, nextResetMs > 0, nextResetMs < 8_640_000_000_000_000 {
+                let parsed = Date(timeIntervalSince1970: nextResetMs / 1000)
+                guard parsed.timeIntervalSince1970.isFinite else { return [] }
+                // For non-zero usage, stale reset is invalid; for 0% allow past reset (quota just refilled).
+                if percentage > 0, parsed < now { return [] }
+                resetAt = parsed < now ? now.addingTimeInterval(3600) : parsed
+            } else if percentage == 0 {
+                // Synthesize a 1-hour future reset for the zero-usage edge case.
+                resetAt = now.addingTimeInterval(3600)
+            } else {
+                return []
+            }
 
             let window = UsageWindow(
                 id: .fiveHour, name: UsageWindowKind.fiveHour.displayName, isRequired: true,

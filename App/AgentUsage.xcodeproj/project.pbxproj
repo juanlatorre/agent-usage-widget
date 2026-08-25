@@ -540,7 +540,6 @@
 		6B3BEBBDCB681595B73BAD3E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				SWIFT_VERSION = 5.0;
 				CODE_SIGN_ENTITLEMENTS = AgentUsageWidget/AgentUsageWidget.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = AgentUsageWidget/Info.plist;
