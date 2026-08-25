@@ -32,7 +32,7 @@ private struct InternalSection: View {
             } else {
                 HStack(spacing: 8) {
                     Button("Connect") { viewModel.startConnect() }
-                    Button("Or enter API key") { viewModel.showingManualKey = true }
+                    Button("Or enter API key") { viewModel.showManualEntry() }
                     if viewModel.isPicking { ProgressView().controlSize(.small) }
                 }
                 Text("Select the opencode auth.json (zai-coding-plan) or a Z.ai token file. Only the 5-hour coding window is tracked. You can also enter the key manually.")
@@ -85,16 +85,20 @@ final class ZaiSectionViewModel: ObservableObject {
     }
     func startConnect() { statusMessage = nil; showingManualKey = false; showingFilePicker = true }
     func startReconnect() { statusMessage = nil; showingManualKey = false; showingFilePicker = true }
+    func showManualEntry() { showingFilePicker = false; statusMessage = nil; showingManualKey = true }
     func saveManualKey() {
-        let k = manualKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !k.isEmpty else { return }
-        switch model.connectZaiSlotManually(slotID, apiKey: k) {
+        // Save always goes through the manual path — never through the file picker.
+        // Dismiss a stale picker so its completion cannot overwrite the manual result.
+        showingFilePicker = false
+        let raw = manualKey
+        guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        switch model.connectZaiSlotManually(slotID, apiKey: raw) {
         case .success: statusMessage = nil; showingManualKey = false; manualKey = ""
-        case .failure(let e): statusMessage = Self.message(for: e)
+        case .failure(let e): statusMessage = Self.manualMessage(for: e)
         }
         refreshDisplayState()
     }
-    func cancelManualKey() { showingManualKey = false; manualKey = "" }
+    func cancelManualKey() { showingManualKey = false; manualKey = ""; statusMessage = nil }
     func testConnection() {
         Task { @MainActor in
             statusMessage = "Testing connection…"
@@ -125,6 +129,15 @@ final class ZaiSectionViewModel: ObservableObject {
         case ZaiConnectionError.noUsableCredentials: return "That file has no readable Z.ai token (zai-coding-plan)."
         case ZaiConnectionError.selectionFailed: return "This file is already bound to another account."
         default: return "Could not connect that file."
+        }
+    }
+    /// Manual-entry errors get a more actionable hint (paste the raw key or whole auth.json).
+    static func manualMessage(for error: Error) -> String {
+        switch error {
+        case ZaiConnectionError.noUsableCredentials:
+            return "That key doesn't look like a Z.ai token. Copy zai-coding-plan → key from auth.json (the 32-hex.suffix value) or paste the whole auth.json — we extract it. Avoid surrounding words or line breaks."
+        case ZaiConnectionError.selectionFailed: return "That token is already bound to another account."
+        default: return "Could not save that key. Check the token and try again."
         }
     }
 }

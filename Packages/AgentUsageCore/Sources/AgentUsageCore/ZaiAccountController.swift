@@ -110,18 +110,61 @@ public struct ZaiAccountController: Sendable {
         return connection
     }
 
+    /// Sanitize a pasted manual key: trims, handles JSON paste, Bearer prefix,
+    /// surrounding quotes/punctuation, and extracts the hex-dot suffix token when
+    /// the paste contains surrounding garbage text.
+    static func sanitizedApiKey(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.first == "{" {
+            if let data = trimmed.data(using: .utf8),
+               let creds = try? ZaiAuthParser.parse(data: data) {
+                return creds.apiKey
+            }
+        }
+        var source = trimmed
+        if source.lowercased().hasPrefix("bearer ") {
+            source = String(source.dropFirst(7)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if source.isEmpty { return nil }
+        }
+        let containsWhitespace = source.contains(where: { $0.isWhitespace })
+        if !containsWhitespace {
+            var cleaned = source.trimmingCharacters(in: CharacterSet(charactersIn: "\"'`°,;"))
+            cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Strip a single trailing period/comma/semicolon that is sentence punctuation,
+            // but preserve the internal dot of the token (hex.suffix).
+            while let last = cleaned.last, ",;." .contains(last) {
+                // Only strip if there are two dots (trailing punctuation) or last char is , ;
+                if last == "." {
+                    let dots = cleaned.filter { $0 == "." }.count
+                    if dots <= 1 { break }
+                }
+                cleaned = String(cleaned.dropLast())
+                if cleaned.isEmpty { return nil }
+            }
+            guard !cleaned.isEmpty, !cleaned.contains(where: { $0.isWhitespace || $0.isNewline }) else { return nil }
+            return cleaned
+        }
+        let pattern = #"[0-9a-fA-F]{20,}\.[A-Za-z0-9_\-]{5,}"#
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)),
+           let range = Range(match.range, in: source) {
+            return String(source[range])
+        }
+        return nil
+    }
+
     @discardableResult
     public func connectManually(slotID: AccountSlotID, apiKey: String, now: Date = Date()) throws -> ZaiConnection {
-        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains(where: { $0.isWhitespace || $0.isNewline }) else {
+        guard let sanitized = Self.sanitizedApiKey(apiKey) else {
             throw ZaiConnectionError.noUsableCredentials
         }
-        let credentials = ZaiCredentials(apiKey: trimmed)
+        let credentials = ZaiCredentials(apiKey: sanitized)
         try keychain.saveZaiCredentials(credentials, account: slotID)
-        let synthetic = ZaiProfileSource(fileIdentity: "manual:\(ZaiProfileSource.fingerprint(trimmed))",
+        let synthetic = ZaiProfileSource(fileIdentity: "manual:\(ZaiProfileSource.fingerprint(sanitized))",
                                          fileName: "manual entry", bookmark: Data())
         let connection = ZaiConnection(source: synthetic,
-                                       importedIdentity: ZaiIdentityMetadata(fingerprint: ZaiProfileSource.fingerprint(trimmed)),
+                                       importedIdentity: ZaiIdentityMetadata(fingerprint: ZaiProfileSource.fingerprint(sanitized)),
                                        importedAt: now)
         var updated = loadConnections(); updated[slotID] = connection
         try saveConnections(updated)

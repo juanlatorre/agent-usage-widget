@@ -21,6 +21,7 @@
 		67B8A1B04FBD41C063AA9EA8 /* AgentUsageWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8689C7EDC0BC3C529304F9C /* AgentUsageWidget.swift */; };
 		9401D9BC3E5FB3F5853681EA /* WidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB17133BA252A9FA4B284B03 /* WidgetViews.swift */; };
 		951FB78A6B643120918FD706 /* CommandCodeConnectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CDCFE0C8974171F17EA0999 /* CommandCodeConnectionSection.swift */; };
+		ADDAD774DBC6BE626097F8BE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 40B68DE6FA98066C0A2AE9DC /* Assets.xcassets */; };
 		B0BDD46A4660D294E537BBB8 /* StatusModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C93F35BD30B7535C4239365 /* StatusModel.swift */; };
 		BEF3086B8CAC04C4D79A3131 /* OpenCodeConnectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60702F5AD5F8FFAA28A3D015 /* OpenCodeConnectionSection.swift */; };
 		D689B88AF3E021AC243551FD /* AgentUsageApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93D0A8E0C3CFEEFCCA55BED4 /* AgentUsageApp.swift */; };
@@ -76,12 +77,14 @@
 		2842300CA5F05EBA8B52A18C /* StatusModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusModelTests.swift; sourceTree = "<group>"; };
 		36518780B48C1BE34EA74947 /* AgentUsage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentUsage.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CDCFE0C8974171F17EA0999 /* CommandCodeConnectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandCodeConnectionSection.swift; sourceTree = "<group>"; };
+		40B68DE6FA98066C0A2AE9DC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4C01AD5545F0D1C1AFAE2B4A /* ClaudeSlotModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSlotModelTests.swift; sourceTree = "<group>"; };
 		5FF7444B5354DCF886C6D1ED /* AgentUsageUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentUsageUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		60702F5AD5F8FFAA28A3D015 /* OpenCodeConnectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeConnectionSection.swift; sourceTree = "<group>"; };
 		6094A8A45081389ED6885153 /* CodexConnectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexConnectionSection.swift; sourceTree = "<group>"; };
 		707DC9CF78C934A7D9D23FF6 /* Previews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Previews.swift; sourceTree = "<group>"; };
 		7C93F35BD30B7535C4239365 /* StatusModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusModel.swift; sourceTree = "<group>"; };
+		8098F91E6C0019C896DEA853 /* AgentUsage.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AgentUsage.entitlements; sourceTree = "<group>"; };
 		835BB179094F92BE69416650 /* ClaudeConnectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeConnectionSection.swift; sourceTree = "<group>"; };
 		87BC02D0CE3D4EED286098E5 /* CodexSlotModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexSlotModelTests.swift; sourceTree = "<group>"; };
 		88E50BA683782C914F957F71 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -181,7 +184,9 @@
 			isa = PBXGroup;
 			children = (
 				E669CC8E1ACA537B12B66955 /* AccountDetailView.swift */,
+				8098F91E6C0019C896DEA853 /* AgentUsage.entitlements */,
 				93D0A8E0C3CFEEFCCA55BED4 /* AgentUsageApp.swift */,
+				40B68DE6FA98066C0A2AE9DC /* Assets.xcassets */,
 				835BB179094F92BE69416650 /* ClaudeConnectionSection.swift */,
 				6094A8A45081389ED6885153 /* CodexConnectionSection.swift */,
 				3CDCFE0C8974171F17EA0999 /* CommandCodeConnectionSection.swift */,
@@ -223,6 +228,7 @@
 			buildConfigurationList = 42C08FBCE913D26AFE231CEE /* Build configuration list for PBXNativeTarget "AgentUsage" */;
 			buildPhases = (
 				5AB2EE1E7DCF50F6EB330C31 /* Sources */,
+				0668753049EB08695DD8C66C /* Resources */,
 				67E5B5F6F369AE097E4CFEC6 /* Frameworks */,
 				0BD38950CAAD1C68A41D4195 /* Embed Foundation Extensions */,
 			);
@@ -314,6 +320,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0668753049EB08695DD8C66C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ADDAD774DBC6BE626097F8BE /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		1995BFB4879F97F05AAC9586 /* Sources */ = {
@@ -526,6 +543,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AgentUsage/AgentUsage.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = AgentUsage/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -540,6 +558,7 @@
 		6B3BEBBDCB681595B73BAD3E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				SWIFT_VERSION = 5.0;
 				CODE_SIGN_ENTITLEMENTS = AgentUsageWidget/AgentUsageWidget.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = AgentUsageWidget/Info.plist;
@@ -608,6 +627,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AgentUsage/AgentUsage.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = AgentUsage/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

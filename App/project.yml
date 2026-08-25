@@ -18,6 +18,8 @@ packages:
 targets:
   AgentUsage:
     type: application
+    entitlements:
+      path: AgentUsage/AgentUsage.entitlements
     platform: macOS
     sources:
       - AgentUsage
