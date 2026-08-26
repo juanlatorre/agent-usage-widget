@@ -235,7 +235,7 @@ private extension AgentUsageApp {
             ]
             try JSONSerialization.data(withJSONObject: document)
                 .write(to: directory.appendingPathComponent("auth.json"))
-            try? manager.connect(slotID: .gptPersonal, directory: directory)
+            try? manager.connect(slotID: .chatGPT, directory: directory)
         } catch {
             return
         }

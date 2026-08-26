@@ -38,15 +38,15 @@ struct StatusModelTests {
     @Test func ac2_displayModeChangesPercentagesNotAvailability() throws {
         let context = try makeModel()
         let model = context.model
-        model.applyFixture(.availablePartial, to: .gptPersonal)
+        model.applyFixture(.availablePartial, to: .chatGPT)
 
         try model.setDisplayMode(.remaining)
-        let remainingPresentation = model.presentations.first { $0.slotID == .gptPersonal }
+        let remainingPresentation = model.presentations.first { $0.slotID == .chatGPT }
         #expect(remainingPresentation?.status == .available)
         #expect(remainingPresentation?.limitingWindow?.fraction(for: .remaining) == 0.58)
 
         try model.setDisplayMode(.used)
-        let usedPresentation = model.presentations.first { $0.slotID == .gptPersonal }
+        let usedPresentation = model.presentations.first { $0.slotID == .chatGPT }
         #expect(usedPresentation?.status == .available)
         #expect(usedPresentation?.limitingWindow?.fraction(for: .used) == 0.42)
     }
@@ -75,8 +75,8 @@ struct StatusModelTests {
         model.applyFixture(.postResetPending, to: .claude)
         #expect(model.presentations.first { $0.slotID == .claude }?.status == .unavailable)
 
-        model.applyFixture(.none, to: .gptPersonal)
-        #expect(model.presentations.first { $0.slotID == .gptPersonal }?.status == .loading)
+        model.applyFixture(.none, to: .chatGPT)
+        #expect(model.presentations.first { $0.slotID == .chatGPT }?.status == .loading)
     }
 
     @Test func ac4_failedSnapshotWritePreservesPreviousRecord() throws {
@@ -84,15 +84,15 @@ struct StatusModelTests {
         let model = context.model
         let snapshotsDir = context.snapshotsDir
         let good = FixtureProvider.partialUsage(
-            slotID: .gptPersonal, provider: .gpt,
+            slotID: .chatGPT, provider: .gpt,
             now: Date(timeIntervalSince1970: 1_760_000_000))
         model.storeSnapshot(good)
         #expect(FileManager.default.fileExists(
-            atPath: snapshotsDir.appendingPathComponent("gpt-personal.json").path))
+            atPath: snapshotsDir.appendingPathComponent("chatgpt.json").path))
 
         // A NaN window is unencodable; the store must throw before touching the file.
         let bad = UsageSnapshot(
-            slotID: .gptPersonal, provider: .gpt,
+            slotID: .chatGPT, provider: .gpt,
             windows: [UsageWindow(
                 id: .weekly, name: "Weekly", isRequired: true,
                 used: .nan, limit: 100,
@@ -103,7 +103,7 @@ struct StatusModelTests {
         }
 
         // The original valid record survives and still loads.
-        let outcome = SnapshotStore(baseURL: snapshotsDir).load(slotID: .gptPersonal)
+        let outcome = SnapshotStore(baseURL: snapshotsDir).load(slotID: .chatGPT)
         guard case let .loaded(snapshot) = outcome else {
             Issue.record("valid record was destroyed")
             return

@@ -19,7 +19,7 @@ enum UnifiedFetcher {
         case .claude:
             let outcome = await statusModel.refreshClaudeSlot(slotID)
             return mapClaudeOutcome(outcome)
-        case .gptPersonal:
+        case .chatGPT:
             let outcome = await statusModel.refreshCodexSlot(slotID)
             return mapCodexOutcome(outcome)
         case .openCodeGO:

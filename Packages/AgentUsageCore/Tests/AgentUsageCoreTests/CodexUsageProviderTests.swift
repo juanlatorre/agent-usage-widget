@@ -237,8 +237,8 @@ struct CodexNormalizationTests {
         #expect(windows.count == 1)
         let weekly = try #require(windows.first)
         #expect(weekly.resetAt == now)
-        let slot = AccountCatalog.slot(for: .gptPersonal)!
-        let snapshot = UsageSnapshot(slotID: .gptPersonal, provider: .gpt, windows: windows, capturedAt: now)
+        let slot = AccountCatalog.slot(for: .chatGPT)!
+        let snapshot = UsageSnapshot(slotID: .chatGPT, provider: .gpt, windows: windows, capturedAt: now)
         let presentation = AvailabilityEngine.derive(slot: slot, snapshot: snapshot, now: now)
         #expect(presentation.status == .unavailable)
     }
@@ -256,9 +256,9 @@ struct CodexNormalizationTests {
         #expect(weekly.resetAt == Date(timeIntervalSince1970: 1_760_000_000 + 261_623))
 
         // Through the engine: blocked with availableAt at the weekly reset (AC2).
-        let slot = AccountCatalog.slot(for: .gptPersonal)!
+        let slot = AccountCatalog.slot(for: .chatGPT)!
         let snapshot = UsageSnapshot(
-            slotID: .gptPersonal, provider: .gpt,
+            slotID: .chatGPT, provider: .gpt,
             windows: windows, capturedAt: now)
         let presentation = AvailabilityEngine.derive(slot: slot, snapshot: snapshot, now: now.addingTimeInterval(1))
         #expect(presentation.status == .blocked)
@@ -272,8 +272,8 @@ struct CodexNormalizationTests {
         let windows = try CodexUsageProvider.normalize(data: data, now: now)
         #expect(windows.isEmpty)
         // Through engine: UNAVAILABLE with no fabrication of 0%.
-        let slot = AccountCatalog.slot(for: .gptPersonal)!
-        let snapshot = UsageSnapshot(slotID: .gptPersonal, provider: .gpt, windows: windows, capturedAt: now)
+        let slot = AccountCatalog.slot(for: .chatGPT)!
+        let snapshot = UsageSnapshot(slotID: .chatGPT, provider: .gpt, windows: windows, capturedAt: now)
         #expect(AvailabilityEngine.derive(slot: slot, snapshot: snapshot, now: now).status == .unavailable)
     }
 
@@ -282,8 +282,8 @@ struct CodexNormalizationTests {
         let data = payload(percent: "0", resetAt: nil, resetAfter: nil)
         let windows = try CodexUsageProvider.normalize(data: data, now: now)
         #expect(windows.isEmpty)
-        let slot = AccountCatalog.slot(for: .gptPersonal)!
-        let snapshot = UsageSnapshot(slotID: .gptPersonal, provider: .gpt, windows: windows, capturedAt: now)
+        let slot = AccountCatalog.slot(for: .chatGPT)!
+        let snapshot = UsageSnapshot(slotID: .chatGPT, provider: .gpt, windows: windows, capturedAt: now)
         #expect(AvailabilityEngine.derive(slot: slot, snapshot: snapshot, now: now).status == .unavailable)
     }
 

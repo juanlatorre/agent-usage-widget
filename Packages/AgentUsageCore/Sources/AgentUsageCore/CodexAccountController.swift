@@ -72,7 +72,7 @@ public struct CodexConnection: Codable, Sendable, Equatable {
 public struct CodexAccountController: Sendable {
 
     /// The single Codex slot this controller manages.
-    public static let managedSlots: [AccountSlotID] = [.gptPersonal]
+    public static let managedSlots: [AccountSlotID] = [.chatGPT]
 
     private let keychain: any CodexCredentialStoring
     private let fileURL: URL
@@ -105,33 +105,59 @@ public struct CodexAccountController: Sendable {
 
     /// Load persisted connections; a corrupt record is ignored, not trusted.
     public func loadConnections() -> [AccountSlotID: CodexConnection] {
-        guard FileManager.default.fileExists(atPath: fileURL.path),
-              let data = try? Data(contentsOf: fileURL),
-              let connections = try? JSONDecoder().decode(
-                [String: CodexConnection].self, from: data) else {
-            return [:]
-        }
-        var result: [AccountSlotID: CodexConnection] = [:]
-        for (raw, connection) in connections {
-            if let slot = AccountSlotID(rawValue: raw) {
-                result[slot] = connection
+        let fm = FileManager.default
+        var merged: [AccountSlotID: CodexConnection] = [:]
+        let candidates: [URL] = {
+            var urls: [URL] = []
+            if fileURL.path.contains("Group Containers"),
+               let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                urls.append(appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("codex-connections.json"))
+            }
+            urls.append(fileURL)
+            return urls
+        }()
+        for url in candidates {
+            guard fm.fileExists(atPath: url.path),
+                  let data = try? Data(contentsOf: url),
+                  let rawDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  !rawDict.isEmpty else { continue }
+            // Full decode once, then remap legacy keys (gpt-personal -> chatgpt) without
+            // re-decoding fragments (which would mangle optional fields like accountID).
+            let decodedLegacy = (try? JSONDecoder().decode([String: CodexConnection].self, from: data)) ?? [:]
+            for (raw, _) in rawDict {
+                let mapped: AccountSlotID?
+                if let direct = AccountSlotID(rawValue: raw) { mapped = direct }
+                else if let alias = AccountSlotID.legacyAliases[raw] { mapped = alias }
+                else { continue }
+                guard let slot = mapped else { continue }
+                if let conn = decodedLegacy[raw] {
+                    merged[slot] = conn
+                }
             }
         }
-        return result
+        return merged
     }
 
     /// Persist connections atomically; secrets never enter this file (parent R12).
     public func saveConnections(_ connections: [AccountSlotID: CodexConnection]) throws {
-        let directory = fileURL.deletingLastPathComponent()
-        if !FileManager.default.fileExists(atPath: directory.path) {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        }
+        let fm = FileManager.default
+        let dir = fileURL.deletingLastPathComponent()
+        if !fm.fileExists(atPath: dir.path) { try? fm.createDirectory(at: dir, withIntermediateDirectories: true) }
         var encoded: [String: CodexConnection] = [:]
-        for (slot, connection) in connections {
-            encoded[slot.rawValue] = connection
-        }
+        for (slot, c) in connections { encoded[slot.rawValue] = c }
         let data = try JSONEncoder().encode(encoded)
-        try data.write(to: fileURL, options: .atomic)
+        do { try data.write(to: fileURL, options: .atomic) } catch {
+            let ns = error as NSError
+            if ns.domain == NSCocoaErrorDomain && (ns.code == 513 || ns.code == 4) {
+                guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { throw error }
+                let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("codex-connections.json")
+                if !fm.fileExists(atPath: fallback.deletingLastPathComponent().path) { try fm.createDirectory(at: fallback.deletingLastPathComponent(), withIntermediateDirectories: true) }
+                try data.write(to: fallback, options: .atomic)
+                NSLog("[AgentUsage] codex-connections fallback write to %@ after %d", fallback.path, ns.code)
+                return
+            }
+            throw error
+        }
     }
 
     // MARK: - Inspection (pre-consent)
@@ -191,6 +217,46 @@ public struct CodexAccountController: Sendable {
         // Every validation passed: import into this slot's Keychain entry only.
         try keychain.saveCodexCredentials(credentials, account: slotID)
 
+        let connection = CodexConnection(
+            source: source,
+            importedIdentity: CodexIdentityMetadata(
+                accountID: credentials.accountID,
+                fingerprint: CodexProfileSource.fingerprint(credentials.accessToken)),
+            importedAt: now)
+        var updated = existing
+        updated[slotID] = connection
+        try saveConnections(updated)
+        return connection
+    }
+
+    /// Direct import for the default ~/.codex home (sandbox workaround):
+    /// caller already validated credentials from the direct file read. We still
+    /// create a bookmark when possible, but tolerate bookmark failure for this
+    /// well-known path and persist the connection anyway.
+    @discardableResult
+    public func connectDirect(
+        slotID: AccountSlotID,
+        credentials: CodexOAuthCredentials,
+        directory: URL,
+        now: Date = Date()
+    ) throws -> CodexConnection {
+        let existing = loadConnections()
+        let source: CodexProfileSource
+        if let direct = try? CodexProfileSource.selecting(directory: directory) {
+            source = direct
+        } else {
+            source = CodexProfileSource(
+                directoryIdentity: CodexProfileSource.identity(of: directory),
+                directoryName: directory.lastPathComponent,
+                bookmark: Data()
+            )
+        }
+        for (otherSlot, connection) in existing where otherSlot != slotID {
+            if connection.source.directoryIdentity == source.directoryIdentity {
+                throw CodexConnectionError.selectionFailed("directory already bound to another slot")
+            }
+        }
+        try keychain.saveCodexCredentials(credentials, account: slotID)
         let connection = CodexConnection(
             source: source,
             importedIdentity: CodexIdentityMetadata(

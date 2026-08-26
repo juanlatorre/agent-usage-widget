@@ -232,10 +232,22 @@ final class CodexSectionViewModel: ObservableObject {
         switch error {
         case CodexConnectionError.noUsableCredentials:
             return "That folder has no readable Codex credentials (auth.json)."
-        case CodexConnectionError.selectionFailed:
-            return "This directory is already bound to another account."
+        case CodexConnectionError.selectionFailed(let msg):
+            if msg.lowercased().contains("already bound") {
+                return "This directory is already bound to another account."
+            }
+            if msg.lowercased().contains("unreadable") || msg.lowercased().contains("bookmark") {
+                return "Could not access that folder. Use “Or choose folder” and pick ~/.codex manually to grant access."
+            }
+            return "Could not connect that folder: \(msg)"
+        case CodexProfileError.directoryUnreadable:
+            return "Could not access that folder. Use “Or choose folder” and pick ~/.codex manually to grant access."
+        case CodexProfileError.authFileMissing:
+            return "That folder has no auth.json. Is this ~/.codex with a ChatGPT login?"
+        case CodexProfileError.credentialsMalformed:
+            return "auth.json exists but has no usable ChatGPT token. Try re-logging in with Codex."
         default:
-            return "Could not connect that folder."
+            return "Could not connect that folder: \(String(describing: error))"
         }
     }
 }

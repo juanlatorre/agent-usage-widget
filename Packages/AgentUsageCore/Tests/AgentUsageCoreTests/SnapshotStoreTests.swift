@@ -40,7 +40,7 @@ import Foundation
 
     @Test func absentSlotLoadsAsAbsent() throws {
         let (store, _) = try makeStore()
-        #expect(store.load(slotID: .gptPersonal) == .absent)
+        #expect(store.load(slotID: .chatGPT) == .absent)
     }
 
     @Test func interruptedWritePreservesPreviousRecord() throws {
@@ -111,7 +111,7 @@ import Foundation
     @Test func corruptSlotDoesNotAffectOtherSlots() throws {
         let (store, dir) = try makeStore()
         try store.save(sampleSnapshot(.claude))
-        try store.save(sampleSnapshot(.gptPersonal))
+        try store.save(sampleSnapshot(.chatGPT))
 
         // Corrupt only the legacy profile's record.
         try Data("garbage".utf8).write(
@@ -121,20 +121,20 @@ import Foundation
             Issue.record("expected quarantine for legacy")
             return
         }
-        guard case let .loaded(gpt) = store.load(slotID: .gptPersonal) else {
+        guard case let .loaded(gpt) = store.load(slotID: .chatGPT) else {
             Issue.record("unaffected slot must still load")
             return
         }
-        #expect(gpt.slotID == .gptPersonal)
+        #expect(gpt.slotID == .chatGPT)
     }
 
     @Test func removeAffectsOnlyTargetSlot() throws {
         let (store, dir) = try makeStore()
         try store.save(sampleSnapshot(.claude))
-        try store.save(sampleSnapshot(.gptPersonal))
+        try store.save(sampleSnapshot(.chatGPT))
         store.remove(slotID: .claude)
         #expect(store.load(slotID: .claude) == .absent)
-        #expect(store.load(slotID: .gptPersonal) != .absent)
+        #expect(store.load(slotID: .chatGPT) != .absent)
         _ = dir
     }
 }

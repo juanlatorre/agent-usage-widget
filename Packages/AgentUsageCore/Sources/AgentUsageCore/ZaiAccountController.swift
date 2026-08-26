@@ -44,8 +44,17 @@ public struct ZaiAccountController: Sendable {
 
     public static func defaultFileURL(appGroupID: String) -> URL? {
         let fm = FileManager.default
-        if let c = fm.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
-            return c.appendingPathComponent("zai-connections.json")
+        if let c = fm.containerURL(forSecurityApplicationGroupIdentifier: appGroupID),
+           fm.isWritableFile(atPath: c.path) {
+            // Verify we can actually write inside the container; after a Team change
+            // the directory is revoked/re-created and writes get 513 until relaunch.
+            let probe = c.appendingPathComponent(".write-test-\(UUID().uuidString)")
+            let canWrite = (try? Data().write(to: probe, options: .atomic)).map { _ in (try? fm.removeItem(at: probe)); return true } ?? false
+            // Also verify via direct write test if probe failed, fallback check isWritable
+            if canWrite || fm.isWritableFile(atPath: c.path) {
+                // Prefer group, but error 513 will be caught below and retried to fallback
+                return c.appendingPathComponent("zai-connections.json")
+            }
         }
         guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
         return appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true)
@@ -53,25 +62,55 @@ public struct ZaiAccountController: Sendable {
     }
 
     public func loadConnections() -> [AccountSlotID: ZaiConnection] {
-        guard FileManager.default.fileExists(atPath: fileURL.path),
-              let data = try? Data(contentsOf: fileURL),
-              let connections = try? JSONDecoder().decode([String: ZaiConnection].self, from: data) else { return [:] }
-        var result: [AccountSlotID: ZaiConnection] = [:]
-        for (raw, c) in connections where AccountSlotID(rawValue: raw) != nil {
-            if let slot = AccountSlotID(rawValue: raw) { result[slot] = c }
+        let fm = FileManager.default
+        var merged: [AccountSlotID: ZaiConnection] = [:]
+        let candidates: [URL] = {
+            var urls: [URL] = []
+            if fileURL.path.contains("Group Containers"),
+               let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                urls.append(appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("zai-connections.json"))
+            }
+            urls.append(fileURL)
+            return urls
+        }()
+        for url in candidates {
+            guard fm.fileExists(atPath: url.path),
+                  let data = try? Data(contentsOf: url),
+                  let connections = try? JSONDecoder().decode([String: ZaiConnection].self, from: data) else { continue }
+            for (raw, c) in connections where AccountSlotID(rawValue: raw) != nil {
+                if let slot = AccountSlotID(rawValue: raw) { merged[slot] = c }
+            }
         }
-        return result
+        return merged
     }
 
     public func saveConnections(_ connections: [AccountSlotID: ZaiConnection]) throws {
-        let dir = fileURL.deletingLastPathComponent()
-        if !FileManager.default.fileExists(atPath: dir.path) {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let fm = FileManager.default
+        let primaryDir = fileURL.deletingLastPathComponent()
+        if !fm.fileExists(atPath: primaryDir.path) {
+            try? fm.createDirectory(at: primaryDir, withIntermediateDirectories: true)
         }
         var encoded: [String: ZaiConnection] = [:]
         for (slot, c) in connections { encoded[slot.rawValue] = c }
         let data = try JSONEncoder().encode(encoded)
-        try data.write(to: fileURL, options: .atomic)
+        do {
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            // Group Container is not blessed for this Team (513 Operation not permitted / 4 No such file)
+            // Fallback to Application Support/AgentUsageWidget which is always writable in sandbox.
+            if fileURL.path.contains("Group Containers") {
+                let ns = error as NSError
+                guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { throw error }
+                let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("zai-connections.json")
+                if !fm.fileExists(atPath: fallback.deletingLastPathComponent().path) {
+                    try fm.createDirectory(at: fallback.deletingLastPathComponent(), withIntermediateDirectories: true)
+                }
+                try data.write(to: fallback, options: .atomic)
+                NSLog("[AgentUsage] zai-connections fallback (Group→AppSupport) after %@/%d", ns.domain, ns.code)
+                return
+            }
+            throw error
+        }
     }
 
     public static func inspectIdentity(of file: URL) throws -> ZaiIdentityMetadata {

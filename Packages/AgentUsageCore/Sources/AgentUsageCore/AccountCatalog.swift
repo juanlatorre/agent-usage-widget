@@ -5,24 +5,26 @@ import Foundation
 /// Slot identities are independent of display labels and provider branding.
 public enum AccountSlotID: String, Codable, CaseIterable, Sendable, Hashable {
     case claude = "claude"
-    case gptPersonal = "gpt-personal"
+    case chatGPT = "chatgpt"
     case openCodeGO = "opencode-go"
     case commandCodeGOAT = "commandcode-goat"
     case zaiCodingPlan = "zai-coding-plan"
 
-    /// Legacy raw values (pre-consolidation) migrate to the single claude slot.
+    /// Keeps legacy "gpt-personal" and pre-consolidation ids working after the rename.
+    public static var legacyAliases: [String: AccountSlotID] { ["gpt-personal": .chatGPT, "claude-legacy-1": .claude, "claude-legacy-2": .claude] }
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let raw = try container.decode(String.self)
-        if raw == "claude-legacy-1" || raw == "claude-legacy-2" {
-            self = .claude
-            return
-        }
+        if let alias = Self.legacyAliases[raw] { self = alias; return }
         guard let value = AccountSlotID(rawValue: raw) else {
             throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown AccountSlotID: \(raw)")
         }
         self = value
     }
+
+    @available(*, deprecated, renamed: "chatGPT")
+    public static var gptPersonal: AccountSlotID { .chatGPT }
 }
 /// A predefined provider-and-label position the user connects to a profile source.
 public struct AccountSlot: Codable, Sendable, Hashable, Identifiable {
@@ -109,8 +111,8 @@ public enum AccountCatalog {
             provider: .claude,
             requiredWindows: [.fiveHour, .weekly]),
         AccountSlot(
-            slotID: .gptPersonal,
-            label: "GPT · Personal",
+            slotID: .chatGPT,
+            label: "ChatGPT",
             provider: .gpt,
             requiredWindows: [.weekly]),
         AccountSlot(

@@ -87,13 +87,14 @@ final class ZaiSectionViewModel: ObservableObject {
     func startReconnect() { statusMessage = nil; showingManualKey = false; showingFilePicker = true }
     func showManualEntry() { showingFilePicker = false; statusMessage = nil; showingManualKey = true }
     func saveManualKey() {
-        // Save always goes through the manual path — never through the file picker.
-        // Dismiss a stale picker so its completion cannot overwrite the manual result.
         showingFilePicker = false
         let raw = manualKey
         guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         switch model.connectZaiSlotManually(slotID, apiKey: raw) {
-        case .success: statusMessage = nil; showingManualKey = false; manualKey = ""
+        case .success:
+            statusMessage = nil; showingManualKey = false; manualKey = ""
+            // Auto-refresh so the user isn't stuck on "Loading..." until they press Refresh Now
+            Task { @MainActor in _ = await model.refreshZaiSlot(slotID); refreshDisplayState() }
         case .failure(let e): statusMessage = Self.manualMessage(for: e)
         }
         refreshDisplayState()
@@ -133,11 +134,23 @@ final class ZaiSectionViewModel: ObservableObject {
     }
     /// Manual-entry errors get a more actionable hint (paste the raw key or whole auth.json).
     static func manualMessage(for error: Error) -> String {
+        let ns = error as NSError
+        if ns.domain == NSCocoaErrorDomain && ns.code == 513 {
+            // Already handled in ZaiAccountController fallback; this path only reached if fallback also failed
+            NSLog("[AgentUsage] Z.ai manual save 513 even after fallback: %@", String(describing: error))
+            return "System blocked writing to the shared folder (Group Container). Fix: quit AgentUsage, run: rm -rf ~/Library/Group\\ Containers/group.com.juanlatorre.agent-usage && open /Applications/AgentUsage.app — then try Save again. The token itself is fine; it is a macOS Team container issue."
+        }
+        if let ke = error as? KeychainStoreError {
+            NSLog("[AgentUsage] Z.ai manual save Keychain error: %@", String(describing: ke))
+            return "Cannot save to Keychain: \(ke). If this persists after reinstalling the signed build, open Keychain Access → right-click login → Unlock."
+        }
         switch error {
         case ZaiConnectionError.noUsableCredentials:
             return "That key doesn't look like a Z.ai token. Copy zai-coding-plan → key from auth.json (the 32-hex.suffix value) or paste the whole auth.json — we extract it. Avoid surrounding words or line breaks."
         case ZaiConnectionError.selectionFailed: return "That token is already bound to another account."
-        default: return "Could not save that key. Check the token and try again."
+        default:
+            NSLog("[AgentUsage] Z.ai manual save failed: %@", String(describing: error))
+            return "Could not save that key: \(error). Check the token and try again."
         }
     }
 }

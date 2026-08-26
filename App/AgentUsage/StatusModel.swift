@@ -221,7 +221,11 @@ final class StatusModel {
         }
         return AccountCatalog.slots.map { slot in
             var copy = slot
-            copy.isConnected = state.connectedSlotIDs.contains(slot.slotID.rawValue)
+            let raw = slot.slotID.rawValue
+            let isDirect = state.connectedSlotIDs.contains(raw)
+            // Legacy "gpt-personal" → "chatgpt" rename
+            let isLegacy = slot.slotID == .chatGPT && state.connectedSlotIDs.contains("gpt-personal")
+            copy.isConnected = isDirect || isLegacy
             return copy
         }
     }
@@ -597,9 +601,52 @@ final class StatusModel {
     }
 
     /// One-click connect for the default ~/.codex location.
+    /// With app-sandbox enabled, the programmatic ~/.codex path has no security-scoped
+    /// access and produces directoryUnreadable → previously shown as "already bound".
+    /// Instead, try a direct (no-bookmark) read for the well-known default home; if that
+    /// also fails, surface the real error so CodexConnectionSection can hint
+    /// “Use Or choose folder”.
     public func connectCodexDefault(_ slotID: AccountSlotID) -> Result<Void, Error> {
+        guard let codexManager else { return .failure(CodexConnectionManagerError.notConfigured) }
         let defaultDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
-        return connectCodexSlot(slotID, directory: defaultDir)
+        NSLog("[AgentUsage] connectCodexDefault trying %@", defaultDir.path)
+        // First attempt: normal bookmark path (works when already granted or non-sandboxed).
+        let normal = connectCodexSlot(slotID, directory: defaultDir)
+        if case .success = normal {
+            NSLog("[AgentUsage] connectCodexDefault normal path succeeded")
+            return normal
+        }
+        if case .failure(let err) = normal {
+            NSLog("[AgentUsage] connectCodexDefault normal path failed: %@", String(describing: err))
+        }
+        // Second attempt: direct read of ~/.codex/auth.json without requiring a bookmark.
+        // Only for the exact default home, not for arbitrary user-picked folders.
+        let fm = FileManager.default
+        let authURL = defaultDir.appendingPathComponent("auth.json")
+        NSLog("[AgentUsage] connectCodexDefault fallback: auth exists=%@ path=%@", fm.fileExists(atPath: authURL.path) ? "yes" : "no", authURL.path)
+        guard fm.fileExists(atPath: authURL.path) else {
+            return normal
+        }
+        guard let data = try? Data(contentsOf: authURL) else {
+            NSLog("[AgentUsage] connectCodexDefault fallback: cannot read data")
+            return normal
+        }
+        guard let creds = try? CodexAuthParser.parse(data: data) else {
+            NSLog("[AgentUsage] connectCodexDefault fallback: parse failed")
+            return normal
+        }
+        NSLog("[AgentUsage] connectCodexDefault fallback: parsed accountID=%@", creds.accountID ?? "nil")
+        do {
+            try codexManager.connectDirect(slotID: slotID, credentials: creds, directory: defaultDir)
+            NSLog("[AgentUsage] connectCodexDefault fallback succeeded")
+            authenticationRequiredSlots.remove(slotID)
+            if let index = slots.firstIndex(where: { $0.slotID == slotID }) { slots[index].isConnected = true }
+            persistConnections(); refreshDerivedState()
+            return .success(())
+        } catch {
+            NSLog("[AgentUsage] connectCodexDefault fallback failed: %@", String(describing: error))
+            return .failure(error)
+        }
     }
 
     /// Disconnect the GPT Personal slot, removing only its app-owned credential,

@@ -52,7 +52,7 @@ private struct InternalSection: View {
             } else {
                 HStack(spacing: 8) {
                     Button("Connect") { viewModel.startConnect() }
-                    Button("Or enter API key") { viewModel.showingManualKey = true }
+                    Button("Or enter API key") { viewModel.showManualEntry() }
                     if viewModel.isPicking {
                         ProgressView().controlSize(.small)
                     }
@@ -137,24 +137,24 @@ final class OpenCodeSectionViewModel: ObservableObject {
         showingManualKey = false
         showingFilePicker = true
     }
+    func showManualEntry() { showingFilePicker = false; statusMessage = nil; showingManualKey = true }
 
     func saveManualKey() {
-        let key = manualKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { return }
-        switch model.connectOpenCodeSlotManually(slotID, apiKey: key) {
+        showingFilePicker = false
+        let raw = manualKey
+        guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        switch model.connectOpenCodeSlotManually(slotID, apiKey: raw) {
         case .success:
-            statusMessage = nil
-            showingManualKey = false
-            manualKey = ""
-        case .failure(let error):
-            statusMessage = Self.message(for: error)
+            statusMessage = nil; showingManualKey = false; manualKey = ""
+            Task { @MainActor in _ = await model.refreshOpenCodeSlot(slotID); refreshDisplayState() }
+        case .failure(let error): statusMessage = Self.manualMessage(for: error)
         }
         refreshDisplayState()
     }
 
     func cancelManualKey() {
         showingManualKey = false
-        manualKey = ""
+        manualKey = ""; statusMessage = nil
     }
 
     func testConnection() {
@@ -211,7 +211,30 @@ final class OpenCodeSectionViewModel: ObservableObject {
         case OpenCodeConnectionError.selectionFailed:
             return "This file is already bound to another account."
         default:
-            return "Could not connect that file."
+            let ns = error as NSError
+            if ns.domain == NSCocoaErrorDomain && ns.code == 513 {
+                return "System blocked writing to the shared folder (Group Container — Team change). Fix: quit AgentUsage, run: rm -rf ~/Library/Group\\ Containers/group.com.juanlatorre.agent-usage && open /Applications/AgentUsage.app — then try Save again."
+            }
+            NSLog("[AgentUsage] OpenCode connect failed: %@", String(describing: error))
+            return "Could not connect that file: \(error)."
+        }
+    }
+    static func manualMessage(for error: Error) -> String {
+        let ns = error as NSError
+        if ns.domain == NSCocoaErrorDomain && ns.code == 513 {
+            return "System blocked writing to the shared folder (Group Container — Team change). Fix: quit AgentUsage, run: rm -rf ~/Library/Group\\ Containers/group.com.juanlatorre.agent-usage && open /Applications/AgentUsage.app — then try Save again. The key itself is fine."
+        }
+        if let ke = error as? KeychainStoreError {
+            NSLog("[AgentUsage] OpenCode manual Keychain error: %@", String(describing: ke))
+            return "Cannot save to Keychain: \(ke). Unlock login keychain and try again."
+        }
+        switch error {
+        case OpenCodeConnectionError.noUsableCredentials:
+            return "That key doesn't look like an OpenCode GO key. Paste the opencode-go key or the whole auth.json — we extract it."
+        case OpenCodeConnectionError.selectionFailed: return "That key is already bound to another account."
+        default:
+            NSLog("[AgentUsage] OpenCode manual save failed: %@", String(describing: error))
+            return "Could not save that key: \(error). Check the token and try again."
         }
     }
 }

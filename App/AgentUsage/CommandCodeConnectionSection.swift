@@ -37,7 +37,7 @@ private struct InternalSection: View {
             } else {
                 HStack(spacing: 8) {
                     Button("Connect") { viewModel.startConnect() }
-                    Button("Or enter API key") { viewModel.showingManualKey = true }
+                    Button("Or enter API key") { viewModel.showManualEntry() }
                     if viewModel.isPicking { ProgressView().controlSize(.small) }
                 }
                 Text("Select the Command Code auth.json (apiKey). Credentials are copied into your Keychain; the original file is never modified. You can also enter the key manually.")
@@ -98,17 +98,21 @@ final class CommandCodeSectionViewModel: ObservableObject {
 
     func startConnect() { statusMessage = nil; showingManualKey = false; showingFilePicker = true }
     func startReconnect() { statusMessage = nil; showingManualKey = false; showingFilePicker = true }
+    func showManualEntry() { showingFilePicker = false; statusMessage = nil; showingManualKey = true }
 
     func saveManualKey() {
-        let key = manualKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { return }
-        switch model.connectCommandCodeSlotManually(slotID, apiKey: key) {
-        case .success: statusMessage = nil; showingManualKey = false; manualKey = ""
-        case .failure(let error): statusMessage = Self.message(for: error)
+        showingFilePicker = false
+        let raw = manualKey
+        guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        switch model.connectCommandCodeSlotManually(slotID, apiKey: raw) {
+        case .success:
+            statusMessage = nil; showingManualKey = false; manualKey = ""
+            Task { @MainActor in _ = await model.refreshCommandCodeSlot(slotID); refreshDisplayState() }
+        case .failure(let error): statusMessage = Self.manualMessage(for: error)
         }
         refreshDisplayState()
     }
-    func cancelManualKey() { showingManualKey = false; manualKey = "" }
+    func cancelManualKey() { showingManualKey = false; manualKey = ""; statusMessage = nil }
 
     func testConnection() {
         Task { @MainActor in
@@ -145,7 +149,31 @@ final class CommandCodeSectionViewModel: ObservableObject {
         switch error {
         case CommandCodeConnectionError.noUsableCredentials: return "That file has no readable Command Code apiKey (auth.json)."
         case CommandCodeConnectionError.selectionFailed: return "This file is already bound to another account."
-        default: return "Could not connect that file."
+        default:
+            let ns = error as NSError
+            if ns.domain == NSCocoaErrorDomain && ns.code == 513 {
+                return "System blocked writing to the shared folder (Group Container — Team change). Fix: quit AgentUsage, run: rm -rf ~/Library/Group\\ Containers/group.com.juanlatorre.agent-usage && open /Applications/AgentUsage.app — then try Save again."
+            }
+            NSLog("[AgentUsage] CommandCode connect failed: %@", String(describing: error))
+            return "Could not connect that file: \(error)."
+        }
+    }
+    static func manualMessage(for error: Error) -> String {
+        let ns = error as NSError
+        if ns.domain == NSCocoaErrorDomain && ns.code == 513 {
+            return "System blocked writing to the shared folder (Group Container — Team change). Fix: quit AgentUsage, run: rm -rf ~/Library/Group\\ Containers/group.com.juanlatorre.agent-usage && open /Applications/AgentUsage.app — then try Save again. The key itself is fine."
+        }
+        if let ke = error as? KeychainStoreError {
+            NSLog("[AgentUsage] CommandCode manual Keychain error: %@", String(describing: ke))
+            return "Cannot save to Keychain: \(ke). Unlock login keychain and try again."
+        }
+        switch error {
+        case CommandCodeConnectionError.noUsableCredentials:
+            return "That key doesn't look like a Command Code apiKey. Paste the apiKey value or the whole auth.json — we extract it. Avoid surrounding words or line breaks."
+        case CommandCodeConnectionError.selectionFailed: return "That key is already bound to another account."
+        default:
+            NSLog("[AgentUsage] CommandCode manual save failed: %@", String(describing: error))
+            return "Could not save that key: \(error). Check the token and try again."
         }
     }
 }

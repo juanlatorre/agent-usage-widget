@@ -59,27 +59,48 @@ public struct CommandCodeAccountController: Sendable {
     // MARK: - Persistence
 
     public func loadConnections() -> [AccountSlotID: CommandCodeConnection] {
-        guard FileManager.default.fileExists(atPath: fileURL.path),
-              let data = try? Data(contentsOf: fileURL),
-              let connections = try? JSONDecoder().decode([String: CommandCodeConnection].self, from: data) else {
-            return [:]
+        let fm = FileManager.default
+        var merged: [AccountSlotID: CommandCodeConnection] = [:]
+        // Load Application Support fallback first (always writable), then Group Container overwrites.
+        let candidates: [URL] = {
+            var urls: [URL] = []
+            if fileURL.path.contains("Group Containers"),
+               let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                urls.append(appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("commandcode-connections.json"))
+            }
+            urls.append(fileURL)
+            return urls
+        }()
+        for url in candidates {
+            guard fm.fileExists(atPath: url.path),
+                  let data = try? Data(contentsOf: url),
+                  let connections = try? JSONDecoder().decode([String: CommandCodeConnection].self, from: data) else { continue }
+            for (raw, c) in connections where AccountSlotID(rawValue: raw) != nil {
+                if let slot = AccountSlotID(rawValue: raw) { merged[slot] = c }
+            }
         }
-        var result: [AccountSlotID: CommandCodeConnection] = [:]
-        for (raw, c) in connections where AccountSlotID(rawValue: raw) != nil {
-            if let slot = AccountSlotID(rawValue: raw) { result[slot] = c }
-        }
-        return result
+        return merged
     }
 
     public func saveConnections(_ connections: [AccountSlotID: CommandCodeConnection]) throws {
+        let fm = FileManager.default
         let dir = fileURL.deletingLastPathComponent()
-        if !FileManager.default.fileExists(atPath: dir.path) {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        }
+        if !fm.fileExists(atPath: dir.path) { try? fm.createDirectory(at: dir, withIntermediateDirectories: true) }
         var encoded: [String: CommandCodeConnection] = [:]
         for (slot, c) in connections { encoded[slot.rawValue] = c }
         let data = try JSONEncoder().encode(encoded)
-        try data.write(to: fileURL, options: .atomic)
+        do { try data.write(to: fileURL, options: .atomic) } catch {
+            if fileURL.path.contains("Group Containers") {
+                let ns = error as NSError
+                guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { throw error }
+                let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("commandcode-connections.json")
+                if !fm.fileExists(atPath: fallback.deletingLastPathComponent().path) { try fm.createDirectory(at: fallback.deletingLastPathComponent(), withIntermediateDirectories: true) }
+                try data.write(to: fallback, options: .atomic)
+                NSLog("[AgentUsage] commandcode-connections fallback (Group→AppSupport) after %@/%d", ns.domain, ns.code)
+                return
+            }
+            throw error
+        }
     }
 
     public static func inspectIdentity(of file: URL) throws -> CommandCodeIdentityMetadata {

@@ -4,5 +4,9 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<key>com.apple.security.app-groups</key>
+	<array>
+		<string>group.com.juanlatorre.agent-usage</string>
+	</array>
 </dict>
 </plist>

@@ -99,12 +99,12 @@ struct CodexAccountControllerTests {
     @Test func connectImportsCredentialsIntoSlotKeychainEntry() throws {
         let context = try makeContext()
         let connection = try context.controller.connect(
-            slotID: .gptPersonal, directory: context.codexDirectory, now: now)
+            slotID: .chatGPT, directory: context.codexDirectory, now: now)
 
-        #expect(context.store.codexCredentials(account: .gptPersonal)?.accessToken == "tok-openai")
-        #expect(context.store.codexCredentials(account: .gptPersonal)?.accountID == "acct-1")
+        #expect(context.store.codexCredentials(account: .chatGPT)?.accessToken == "tok-openai")
+        #expect(context.store.codexCredentials(account: .chatGPT)?.accountID == "acct-1")
         #expect(connection.importedIdentity.accountID == "acct-1")
-        #expect(context.controller.isConnected(.gptPersonal))
+        #expect(context.controller.isConnected(.chatGPT))
         #expect(connection.source.directoryName.hasPrefix("profile-codex-"))
     }
 
@@ -115,10 +115,10 @@ struct CodexAccountControllerTests {
         try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
 
         #expect(throws: CodexConnectionError.noUsableCredentials) {
-            try context.controller.connect(slotID: .gptPersonal, directory: empty, now: now)
+            try context.controller.connect(slotID: .chatGPT, directory: empty, now: now)
         }
-        #expect(context.store.codexCredentials(account: .gptPersonal) == nil)
-        #expect(!context.controller.isConnected(.gptPersonal))
+        #expect(context.store.codexCredentials(account: .chatGPT) == nil)
+        #expect(!context.controller.isConnected(.chatGPT))
     }
 
     @Test func apiKeyOnlyDirectoryIsRejected() throws {
@@ -130,7 +130,7 @@ struct CodexAccountControllerTests {
             .write(to: apiOnly.appendingPathComponent("auth.json"))
 
         #expect(throws: CodexConnectionError.noUsableCredentials) {
-            try context.controller.connect(slotID: .gptPersonal, directory: apiOnly, now: now)
+            try context.controller.connect(slotID: .chatGPT, directory: apiOnly, now: now)
         }
     }
 
@@ -142,10 +142,10 @@ struct CodexAccountControllerTests {
         _ = try context.claudeController.connect(
             slotID: .claude, directory: context.claudeDirectory, now: now)
         #expect(throws: CodexConnectionError.noUsableCredentials) {
-            try context.controller.connect(slotID: .gptPersonal, directory: context.claudeDirectory, now: now)
+            try context.controller.connect(slotID: .chatGPT, directory: context.claudeDirectory, now: now)
         }
-        #expect(context.store.codexCredentials(account: .gptPersonal) == nil)
-        #expect(!context.controller.isConnected(.gptPersonal))
+        #expect(context.store.codexCredentials(account: .chatGPT) == nil)
+        #expect(!context.controller.isConnected(.chatGPT))
 
         // Symmetrically, a Codex auth.json is unusable for a Claude slot with a fresh controller.
         let freshClaude = ClaudeAccountController(keychain: context.store, connectionsFileURL: context.claudeConnectionsFile.deletingLastPathComponent().appendingPathComponent("claude-fresh-\(UUID().uuidString).json"))
@@ -153,12 +153,12 @@ struct CodexAccountControllerTests {
             try freshClaude.connect(slotID: .claude, directory: context.codexDirectory, now: now)
         }
         #expect(!freshClaude.isConnected(.claude))
-        #expect(!context.controller.isConnected(.gptPersonal))
+        #expect(!context.controller.isConnected(.chatGPT))
     }
 
     @Test func connectionsFileCarriesNoSecrets() throws {
         let context = try makeContext()
-        _ = try context.controller.connect(slotID: .gptPersonal, directory: context.codexDirectory, now: now)
+        _ = try context.controller.connect(slotID: .chatGPT, directory: context.codexDirectory, now: now)
 
         let raw = try String(contentsOf: context.connectionsFile, encoding: .utf8)
         #expect(!raw.contains("tok-openai"))
@@ -169,32 +169,32 @@ struct CodexAccountControllerTests {
 
     @Test func syncRestoresMissingKeychainWhenSourceIdentityMatches() throws {
         let context = try makeContext()
-        _ = try context.controller.connect(slotID: .gptPersonal, directory: context.codexDirectory, now: now)
+        _ = try context.controller.connect(slotID: .chatGPT, directory: context.codexDirectory, now: now)
 
         // Simulate the stored copy vanishing while the source stays intact.
-        context.store.deleteCodexCredentials(account: .gptPersonal)
-        _ = try context.controller.synchronize(slotID: .gptPersonal, now: now.addingTimeInterval(60))
+        context.store.deleteCodexCredentials(account: .chatGPT)
+        _ = try context.controller.synchronize(slotID: .chatGPT, now: now.addingTimeInterval(60))
 
-        #expect(context.store.codexCredentials(account: .gptPersonal)?.accessToken == "tok-openai")
+        #expect(context.store.codexCredentials(account: .chatGPT)?.accessToken == "tok-openai")
     }
 
     @Test func syncWithRotatedTokenRefreshesStoredCopy() throws {
         let context = try makeContext()
-        _ = try context.controller.connect(slotID: .gptPersonal, directory: context.codexDirectory, now: now)
+        _ = try context.controller.connect(slotID: .chatGPT, directory: context.codexDirectory, now: now)
 
         // Same identity (same account id), rotated secret → sync refreshes it.
         let rotated = try Self.write(
             ["auth_mode": "chatgpt", "tokens": ["access_token": "tok-rotated", "account_id": "acct-1"]],
             to: context.codexDirectory, file: "auth.json")
         _ = rotated
-        _ = try context.controller.synchronize(slotID: .gptPersonal, now: now.addingTimeInterval(60))
+        _ = try context.controller.synchronize(slotID: .chatGPT, now: now.addingTimeInterval(60))
 
-        #expect(context.store.codexCredentials(account: .gptPersonal)?.accessToken == "tok-rotated")
+        #expect(context.store.codexCredentials(account: .chatGPT)?.accessToken == "tok-rotated")
     }
 
     @Test func sourceIdentityChangeStopsSyncWithoutOverwriting() throws {
         let context = try makeContext()
-        _ = try context.controller.connect(slotID: .gptPersonal, directory: context.codexDirectory, now: now)
+        _ = try context.controller.connect(slotID: .chatGPT, directory: context.codexDirectory, now: now)
 
         // A different ChatGPT identity appears behind the bound directory.
         _ = try Self.write(
@@ -202,24 +202,24 @@ struct CodexAccountControllerTests {
             to: context.codexDirectory, file: "auth.json")
 
         #expect(throws: CodexConnectionError.sourceIdentityChanged) {
-            try context.controller.synchronize(slotID: .gptPersonal, now: now.addingTimeInterval(60))
+            try context.controller.synchronize(slotID: .chatGPT, now: now.addingTimeInterval(60))
         }
         // The stored secret was not overwritten by the foreign identity.
-        #expect(context.store.codexCredentials(account: .gptPersonal)?.accessToken == "tok-openai")
+        #expect(context.store.codexCredentials(account: .chatGPT)?.accessToken == "tok-openai")
     }
 
     // MARK: Disconnect — app-owned material only (I2)
 
     @Test func disconnectRemovesOnlyCodexSlotMaterial() throws {
         let context = try makeContext()
-        _ = try context.controller.connect(slotID: .gptPersonal, directory: context.codexDirectory, now: now)
+        _ = try context.controller.connect(slotID: .chatGPT, directory: context.codexDirectory, now: now)
         _ = try context.claudeController.connect(
             slotID: .claude, directory: context.claudeDirectory, now: now)
 
-        context.controller.disconnect(slotID: .gptPersonal)
+        context.controller.disconnect(slotID: .chatGPT)
 
-        #expect(!context.controller.isConnected(.gptPersonal))
-        #expect(context.store.codexCredentials(account: .gptPersonal) == nil)
+        #expect(!context.controller.isConnected(.chatGPT))
+        #expect(context.store.codexCredentials(account: .chatGPT) == nil)
         // The sibling provider's slot is untouched.
         #expect(context.claudeController.isConnected(.claude))
         #expect(context.store.credentials(account: .claude)?.accessToken == "tok-claude")
@@ -265,14 +265,14 @@ struct CodexConnectionManagerTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try Data(#"{"tokens":{"access_token":"tok-a","account_id":"acct-a"}}"#.utf8)
             .write(to: directory.appendingPathComponent("auth.json"))
-        try manager.connect(slotID: .gptPersonal, directory: directory)
+        try manager.connect(slotID: .chatGPT, directory: directory)
 
-        let outcome = await manager.refresh(slotID: .gptPersonal)
+        let outcome = await manager.refresh(slotID: .chatGPT)
         guard case let .updated(snapshot) = outcome else {
             Issue.record("expected updated, got \(outcome)")
             return
         }
-        #expect(snapshot.slotID == .gptPersonal)
+        #expect(snapshot.slotID == .chatGPT)
         #expect(snapshot.provider == .gpt)
         #expect(snapshot.windows.count == 1)
         #expect(snapshot.windows[0].id == .weekly)
@@ -293,16 +293,16 @@ struct CodexConnectionManagerTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try Data(#"{"tokens":{"access_token":"tok-a"}}"#.utf8)
             .write(to: directory.appendingPathComponent("auth.json"))
-        try manager.connect(slotID: .gptPersonal, directory: directory)
+        try manager.connect(slotID: .chatGPT, directory: directory)
 
-        let outcome = await manager.refresh(slotID: .gptPersonal)
+        let outcome = await manager.refresh(slotID: .chatGPT)
         guard case let .updated(snapshot) = outcome else {
             Issue.record("expected updated empty snapshot (UNAVAILABLE), got \(outcome)")
             return
         }
         #expect(snapshot.windows.isEmpty)
         // Through engine it derives UNAVAILABLE, never failed/auth.
-        let slot = AccountCatalog.slot(for: .gptPersonal)!
+        let slot = AccountCatalog.slot(for: .chatGPT)!
         #expect(AvailabilityEngine.derive(slot: slot, snapshot: snapshot, now: Date()).status == .unavailable)
     }
 
@@ -320,9 +320,9 @@ struct CodexConnectionManagerTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try Data(#"{"tokens":{"access_token":"tok-a"}}"#.utf8)
             .write(to: directory.appendingPathComponent("auth.json"))
-        try manager.connect(slotID: .gptPersonal, directory: directory)
+        try manager.connect(slotID: .chatGPT, directory: directory)
 
-        let outcome = await manager.refresh(slotID: .gptPersonal)
+        let outcome = await manager.refresh(slotID: .chatGPT)
         #expect(outcome == .authenticationRequired)
     }
 }

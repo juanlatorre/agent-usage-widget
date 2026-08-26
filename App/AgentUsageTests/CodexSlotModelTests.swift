@@ -90,12 +90,12 @@ struct CodexSlotModelTests {
     @Test func connectMarksGPTSlotConnectedAndStoresCredential() throws {
         let context = try makeContext()
 
-        assertConnect(context.model.connectCodexSlot(.gptPersonal, directory: context.codexDirectory))
+        assertConnect(context.model.connectCodexSlot(.chatGPT, directory: context.codexDirectory))
 
-        let presentation = context.model.presentations.first { $0.slotID == .gptPersonal }
+        let presentation = context.model.presentations.first { $0.slotID == .chatGPT }
         // Connected without a successful refresh yet → LOADING (parent R7).
         #expect(presentation?.status == .loading)
-        #expect(context.store.codexCredentials(account: .gptPersonal)?.accessToken == "tok-openai")
+        #expect(context.store.codexCredentials(account: .chatGPT)?.accessToken == "tok-openai")
 
         // The connection file carries no secrets.
         let raw = try String(contentsOf: context.connectionsFile, encoding: .utf8)
@@ -108,13 +108,13 @@ struct CodexSlotModelTests {
         try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
 
         let context = try makeContext()
-        let result = context.model.connectCodexSlot(.gptPersonal, directory: broken)
+        let result = context.model.connectCodexSlot(.chatGPT, directory: broken)
         guard case .failure(let error) = result else {
             Issue.record("expected failure")
             return
         }
         #expect(error is CodexConnectionError)
-        #expect(context.model.presentations.first { $0.slotID == .gptPersonal }?.status == .notConnected)
+        #expect(context.model.presentations.first { $0.slotID == .chatGPT }?.status == .notConnected)
     }
 
     // MARK: Refresh outcomes — R4/R11
@@ -126,9 +126,9 @@ struct CodexSlotModelTests {
                 body: #"{"rate_limit":{"allowed":true,"primary_window":{"used_percent":64,"reset_at":\#(1_760_000_000 + 200_000)}}}"#)
         })
         defer { StubURLProtocol.responder = nil }
-        assertConnect(context.model.connectCodexSlot(.gptPersonal, directory: context.codexDirectory))
+        assertConnect(context.model.connectCodexSlot(.chatGPT, directory: context.codexDirectory))
 
-        let outcome = await context.model.refreshCodexSlot(.gptPersonal)
+        let outcome = await context.model.refreshCodexSlot(.chatGPT)
         guard case let .updated(snapshot) = outcome else {
             Issue.record("expected updated, got \(outcome)")
             return
@@ -136,7 +136,7 @@ struct CodexSlotModelTests {
         #expect(snapshot.windows.count == 1)
         #expect(snapshot.windows[0].id == .weekly)
 
-        let presentation = context.model.presentations.first { $0.slotID == .gptPersonal }
+        let presentation = context.model.presentations.first { $0.slotID == .chatGPT }
         #expect(presentation?.status == .available)
 
         // The snapshot survives a fresh model over the same stores.
@@ -153,7 +153,7 @@ struct CodexSlotModelTests {
                 provider: CodexUsageProvider(),
                 now: { self.now }),
             now: { self.now })
-        let restored = fresh.presentations.first { $0.slotID == .gptPersonal }
+        let restored = fresh.presentations.first { $0.slotID == .chatGPT }
         #expect(restored?.status == .available)
     }
 
@@ -164,14 +164,14 @@ struct CodexSlotModelTests {
                 body: #"{"rate_limit":{"allowed":false,"limit_reached":true,"primary_window":{"used_percent":100,"limit_reached":true,"reset_after_seconds":261623}}}"#)
         })
         defer { StubURLProtocol.responder = nil }
-        assertConnect(context.model.connectCodexSlot(.gptPersonal, directory: context.codexDirectory))
+        assertConnect(context.model.connectCodexSlot(.chatGPT, directory: context.codexDirectory))
 
-        let outcome = await context.model.refreshCodexSlot(.gptPersonal)
+        let outcome = await context.model.refreshCodexSlot(.chatGPT)
         guard case let .updated(snapshot) = outcome else {
             Issue.record("expected updated, got \(outcome)")
             return
         }
-        let presentation = context.model.presentations.first { $0.slotID == .gptPersonal }
+        let presentation = context.model.presentations.first { $0.slotID == .chatGPT }
         #expect(presentation?.status == .blocked)
         #expect(presentation?.blockers.count == 1)
         // availableAt equals the weekly reset derived from reset_after_seconds.
@@ -185,8 +185,8 @@ struct CodexSlotModelTests {
                 status: 200,
                 body: #"{"rate_limit":{"allowed":true,"primary_window":{"used_percent":20,"reset_at":\#(1_760_000_000 + 100_000)}}}"#)
         })
-        assertConnect(context.model.connectCodexSlot(.gptPersonal, directory: context.codexDirectory))
-        _ = await context.model.refreshCodexSlot(.gptPersonal)
+        assertConnect(context.model.connectCodexSlot(.chatGPT, directory: context.codexDirectory))
+        _ = await context.model.refreshCodexSlot(.chatGPT)
 
         // …then the provider starts rejecting the credential.
         StubURLProtocol.responder = { _ in
@@ -194,9 +194,9 @@ struct CodexSlotModelTests {
         }
         defer { StubURLProtocol.responder = nil }
 
-        let outcome = await context.model.refreshCodexSlot(.gptPersonal)
+        let outcome = await context.model.refreshCodexSlot(.chatGPT)
         #expect(outcome == .authenticationRequired)
-        let presentation = context.model.presentations.first { $0.slotID == .gptPersonal }
+        let presentation = context.model.presentations.first { $0.slotID == .chatGPT }
         #expect(presentation?.status == .authenticationRequired)
         // Prior data stays visible purely as historical context (parent R7/R11).
         #expect(presentation?.historicalWindows.isEmpty == false)
@@ -210,16 +210,16 @@ struct CodexSlotModelTests {
                 body: #"{"rate_limit":{"allowed":true,"primary_window":{"used_percent":10}}}"#)
         })
         defer { StubURLProtocol.responder = nil }
-        assertConnect(context.model.connectCodexSlot(.gptPersonal, directory: context.codexDirectory))
+        assertConnect(context.model.connectCodexSlot(.chatGPT, directory: context.codexDirectory))
 
-        let outcome = await context.model.refreshCodexSlot(.gptPersonal)
+        let outcome = await context.model.refreshCodexSlot(.chatGPT)
         guard case let .updated(snapshot) = outcome else {
             Issue.record("expected updated (empty snapshot), got \(outcome)")
             return
         }
         #expect(snapshot.windows.isEmpty)
         // First incomplete payload persists as UNAVAILABLE, never AVAILABLE at 0%.
-        let presentation = context.model.presentations.first { $0.slotID == .gptPersonal }
+        let presentation = context.model.presentations.first { $0.slotID == .chatGPT }
         #expect(presentation?.status == .unavailable)
     }
 
@@ -227,12 +227,12 @@ struct CodexSlotModelTests {
 
     @Test func disconnectRemovesOnlyGPTSlotState() async throws {
         let context = try makeContext()
-        assertConnect(context.model.connectCodexSlot(.gptPersonal, directory: context.codexDirectory))
+        assertConnect(context.model.connectCodexSlot(.chatGPT, directory: context.codexDirectory))
 
-        context.model.disconnectCodexSlot(.gptPersonal)
+        context.model.disconnectCodexSlot(.chatGPT)
 
-        #expect(context.model.presentations.first { $0.slotID == .gptPersonal }?.status == .notConnected)
-        #expect(context.store.codexCredentials(account: .gptPersonal) == nil)
+        #expect(context.model.presentations.first { $0.slotID == .chatGPT }?.status == .notConnected)
+        #expect(context.store.codexCredentials(account: .chatGPT) == nil)
         // External profile remains untouched; user stays signed in to Codex.
         #expect(FileManager.default.fileExists(
             atPath: context.codexDirectory.appendingPathComponent("auth.json").path))
@@ -242,7 +242,7 @@ struct CodexSlotModelTests {
 
     @Test func persistedConnectionRestoresConnectedSlotOnFreshModel() throws {
         let context = try makeContext()
-        assertConnect(context.model.connectCodexSlot(.gptPersonal, directory: context.codexDirectory))
+        assertConnect(context.model.connectCodexSlot(.chatGPT, directory: context.codexDirectory))
 
         let freshManager = CodexConnectionManager(
             controller: context.controller,
@@ -256,6 +256,6 @@ struct CodexSlotModelTests {
             claudeManager: nil,
             codexManager: freshManager,
             now: { self.now })
-        #expect(freshModel.presentations.first { $0.slotID == .gptPersonal }?.status == .loading)
+        #expect(freshModel.presentations.first { $0.slotID == .chatGPT }?.status == .loading)
     }
 }

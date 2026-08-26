@@ -58,8 +58,8 @@ import Foundation
 
     @Test func ac2_displayModeChangesRepresentationOnly() {
         let snapshot = FixtureProvider.partialUsage(
-            slotID: .gptPersonal, provider: .gpt, now: now)
-        let slot = self.slot(.gptPersonal, windows: [.fiveHour])
+            slotID: .chatGPT, provider: .gpt, now: now)
+        let slot = self.slot(.chatGPT, windows: [.fiveHour])
 
         let presentation = AvailabilityEngine.derive(slot: slot, snapshot: snapshot, now: now)
 
@@ -216,10 +216,10 @@ import Foundation
         #expect(over.isBlocking)
         #expect(over.clampedUsedFraction == 1.0)
         let snapshot = UsageSnapshot(
-            slotID: .gptPersonal, provider: .gpt,
+            slotID: .chatGPT, provider: .gpt,
             windows: [over], capturedAt: now)
         let presentation = AvailabilityEngine.derive(
-            slot: slot(.gptPersonal, windows: [.fiveHour]),
+            slot: slot(.chatGPT, windows: [.fiveHour]),
             snapshot: snapshot, now: now)
         #expect(presentation.status == .blocked)
         #expect(presentation.limitingWindow?.usedFraction == 1.0)
@@ -229,10 +229,10 @@ import Foundation
     @Test func pastResetIsInvalidPendingVerification() {
         let expired = window(.fiveHour, used: 0, limit: 100, resetIn: -120)
         let snapshot = UsageSnapshot(
-            slotID: .gptPersonal, provider: .gpt,
+            slotID: .chatGPT, provider: .gpt,
             windows: [expired], capturedAt: now.addingTimeInterval(-30))
         let presentation = AvailabilityEngine.derive(
-            slot: slot(.gptPersonal, windows: [.fiveHour]),
+            slot: slot(.chatGPT, windows: [.fiveHour]),
             snapshot: snapshot, now: now)
         // A fully-used expired window would be blocking anyway; assert it never
         // presents as AVAILABLE without post-reset verification.

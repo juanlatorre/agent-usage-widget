@@ -75,15 +75,27 @@ public struct KeychainStore: Sendable, CredentialStoring {
     }
 
     /// Load the stored secret payload for one slot, or nil when absent.
+    /// For the renamed slot chatGPT, also probes legacy gpt-personal.
     public func secret(account: AccountSlotID) -> Data? {
         var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
-
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
+        if status == errSecSuccess { return result as? Data }
+        // One-time migration: chatGPT was gpt-personal
+        if account == .chatGPT {
+            var legacy = baseQuery(account: .init(rawValue: "gpt-personal")!)
+            legacy[kSecReturnData as String] = true
+            legacy[kSecMatchLimit as String] = kSecMatchLimitOne
+            let ls = SecItemCopyMatching(legacy as CFDictionary, &result)
+            if ls == errSecSuccess, let data = result as? Data {
+                // Best-effort migrate to new service; ignore failure
+                try? setSecret(data, account: .chatGPT)
+                return data
+            }
+        }
+        return nil
     }
 
     /// Remove only this slot's entry. Deleting a missing item succeeds.

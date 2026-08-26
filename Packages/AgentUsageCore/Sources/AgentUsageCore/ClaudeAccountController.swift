@@ -77,33 +77,48 @@ public struct ClaudeAccountController: Sendable {
 
     /// Load persisted connections; a corrupt record is ignored, not trusted.
     public func loadConnections() -> [AccountSlotID: ClaudeConnection] {
-        guard FileManager.default.fileExists(atPath: fileURL.path),
-              let data = try? Data(contentsOf: fileURL),
-              let connections = try? JSONDecoder().decode(
-                [String: ClaudeConnection].self, from: data) else {
-            return [:]
-        }
-        var result: [AccountSlotID: ClaudeConnection] = [:]
-        for (raw, connection) in connections {
-            if let slot = AccountSlotID(rawValue: raw) {
-                result[slot] = connection
+        let fm = FileManager.default
+        var merged: [AccountSlotID: ClaudeConnection] = [:]
+        let candidates: [URL] = {
+            var urls: [URL] = []
+            if fileURL.path.contains("Group Containers"),
+               let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                urls.append(appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("claude-connections.json"))
+            }
+            urls.append(fileURL)
+            return urls
+        }()
+        for url in candidates {
+            guard fm.fileExists(atPath: url.path),
+                  let data = try? Data(contentsOf: url),
+                  let connections = try? JSONDecoder().decode([String: ClaudeConnection].self, from: data) else { continue }
+            for (raw, c) in connections where AccountSlotID(rawValue: raw) != nil {
+                if let slot = AccountSlotID(rawValue: raw) { merged[slot] = c }
             }
         }
-        return result
+        return merged
     }
 
     /// Persist connections atomically; secrets never enter this file (parent R12).
     public func saveConnections(_ connections: [AccountSlotID: ClaudeConnection]) throws {
-        let directory = fileURL.deletingLastPathComponent()
-        if !FileManager.default.fileExists(atPath: directory.path) {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        }
+        let fm = FileManager.default
+        let dir = fileURL.deletingLastPathComponent()
+        if !fm.fileExists(atPath: dir.path) { try? fm.createDirectory(at: dir, withIntermediateDirectories: true) }
         var encoded: [String: ClaudeConnection] = [:]
-        for (slot, connection) in connections {
-            encoded[slot.rawValue] = connection
-        }
+        for (slot, c) in connections { encoded[slot.rawValue] = c }
         let data = try JSONEncoder().encode(encoded)
-        try data.write(to: fileURL, options: .atomic)
+        do { try data.write(to: fileURL, options: .atomic) } catch {
+            let ns = error as NSError
+            if ns.domain == NSCocoaErrorDomain && (ns.code == 513 || ns.code == 4) {
+                guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { throw error }
+                let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("claude-connections.json")
+                if !fm.fileExists(atPath: fallback.deletingLastPathComponent().path) { try fm.createDirectory(at: fallback.deletingLastPathComponent(), withIntermediateDirectories: true) }
+                try data.write(to: fallback, options: .atomic)
+                NSLog("[AgentUsage] claude-connections fallback write to %@ after %d", fallback.path, ns.code)
+                return
+            }
+            throw error
+        }
     }
 
     // MARK: - Inspection (pre-consent)

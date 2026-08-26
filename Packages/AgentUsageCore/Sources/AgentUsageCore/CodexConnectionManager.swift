@@ -61,6 +61,12 @@ public final class CodexConnectionManager {
         _ = try controller.connect(slotID: slotID, directory: directory, now: now())
     }
 
+    /// Direct connect for the well-known ~/.codex home when sandbox blocks a
+    /// bookmark on the programmatic path. Caller has already validated credentials.
+    public func connectDirect(slotID: AccountSlotID, credentials: CodexOAuthCredentials, directory: URL) throws {
+        _ = try controller.connectDirect(slotID: slotID, credentials: credentials, directory: directory, now: now())
+    }
+
     /// Disconnect: removes only this slot's app-owned material (R7).
     public func disconnect(slotID: AccountSlotID) {
         controller.disconnect(slotID: slotID)
