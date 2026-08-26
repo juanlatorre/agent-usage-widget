@@ -185,8 +185,30 @@ final class StatusModel {
 
     /// App activation trigger (R9).
     func handleAppActivation() async {
-        guard let refreshService else { return }
+        guard let refreshService else {
+            // Fallback when RefreshService hasn't been wired (pre-07 builds):
+            // at least refresh the connected slots directly via their managers.
+            await refreshConnectedSlotsDirectly()
+            return
+        }
         await refreshService.triggerGlobal(trigger: .appActivation)
+    }
+
+    private func refreshConnectedSlotsDirectly() async {
+        // Fire all connected slots concurrently; each manager handles its own auth/transport.
+        await withTaskGroup(of: Void.self) { group in
+            for slotID in connectedSlots {
+                group.addTask { [self] in
+                    switch slotID {
+                    case .claude: _ = await self.refreshClaudeSlot(slotID)
+                    case .chatGPT: _ = await self.refreshCodexSlot(slotID)
+                    case .openCodeGO: _ = await self.refreshOpenCodeSlot(slotID)
+                    case .commandCodeGOAT: _ = await self.refreshCommandCodeSlot(slotID)
+                    case .zaiCodingPlan: _ = await self.refreshZaiSlot(slotID)
+                    }
+                }
+            }
+        }
     }
 
     private func persistPreferences() throws {

@@ -163,6 +163,29 @@ struct AgentUsageApp: App {
             commandCodeManager: commandCodeManager,
             zaiManager: zaiManager)
         model.loadPersistedSnapshots()
+        // Wire 07 refresh service so onAppear/.task handleAppActivation actually fetches
+        // (before this, refreshService was nil and the app stayed Loading... forever).
+        if let snapshotStore {
+            let failureFile = RefreshFailureStore.defaultFileURL(appGroupID: "group.com.juanlatorre.agent-usage")
+            let failureStore = failureFile.map { RefreshFailureStore(fileURL: $0) }
+                ?? RefreshFailureStore(fileURL: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("refresh-failures.json"))
+            let scheduler = RefreshScheduler(
+                preferences: { model.preferences },
+                connectedSlots: { model.connectedSlots },
+                snapshots: { [:] },
+                isAuthBlocked: { model.authenticationRequiredSlots.contains($0) }
+            )
+            // Keep presentation fresh when a background fetch publishes a new snapshot
+            let fetcher = UnifiedFetcher.fetcher(statusModel: model)
+            let service = RefreshService(
+                scheduler: scheduler,
+                snapshotStore: snapshotStore,
+                failureStore: failureStore,
+                fetcher: fetcher,
+                onSnapshotPublished: { snap in Task { @MainActor in model.storeSnapshot(snap) } }
+            )
+            model.attachRefreshService(scheduler: scheduler, failureStore: failureStore, service: service)
+        }
         return model
     }()
 }

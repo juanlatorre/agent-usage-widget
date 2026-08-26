@@ -24,6 +24,7 @@ struct RootView: View {
     @Environment(StatusModel.self) private var model
 
     @State private var selection: AccountSlotID? = .claude
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationSplitView {
@@ -51,6 +52,10 @@ struct RootView: View {
         }
         .frame(minWidth: 720, minHeight: 520)
         .navigationTitle("Agent Usage")
+        .task { await model.handleAppActivation() }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active { Task { await model.handleAppActivation() } }
+        }
     }
 }
 

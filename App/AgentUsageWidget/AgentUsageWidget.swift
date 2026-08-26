@@ -76,6 +76,15 @@ struct WidgetStore {
     static var appGroupID: String { "group.com.juanlatorre.agent-usage" }
     static var snapshotBaseURL: URL? { SnapshotStore.defaultBaseURL(appGroupID: appGroupID) }
     static var preferencesFileURL: URL? { PreferencesStore.defaultFileURL(appGroupID: appGroupID) }
+    static var connectionsFileURL: URL? {
+        let fm = FileManager.default
+        if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
+            return container.appendingPathComponent("connections.json")
+        }
+        return fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("AgentUsageWidget", isDirectory: true)
+            .appendingPathComponent("connections.json")
+    }
     static var widgetRefreshRequestURL: URL {
         let fm = FileManager.default
         if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
@@ -83,18 +92,57 @@ struct WidgetStore {
         }
         return fm.temporaryDirectory.appendingPathComponent("widget-refresh-request.json")
     }
+    // Merge Group Container + Application Support fallback — widget must see snapshots written via fallback too
     static func loadSnapshots() -> [AccountSlotID: UsageSnapshot] {
-        guard let base = snapshotBaseURL else { return [:] }
-        let store = SnapshotStore(baseURL: base)
         var result: [AccountSlotID: UsageSnapshot] = [:]
-        for slot in AccountCatalog.slots {
-            if case .loaded(let snap) = store.load(slotID: slot.slotID) { result[slot.slotID] = snap }
+        let fm = FileManager.default
+        var bases: [URL] = []
+        if let base = snapshotBaseURL { bases.append(base) }
+        if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("snapshots", isDirectory: true)
+            if !bases.contains(where: { $0.path == fallback.path }) { bases.append(fallback) }
+        }
+        for base in bases {
+            let store = SnapshotStore(baseURL: base)
+            for slot in AccountCatalog.slots where result[slot.slotID] == nil {
+                if case .loaded(let snap) = store.load(slotID: slot.slotID) { result[slot.slotID] = snap }
+            }
         }
         return result
     }
     static func loadPreferences() -> DisplayPreferences {
         guard let url = preferencesFileURL else { return DisplayPreferences() }
         return PreferencesStore(fileURL: url).load()
+    }
+    static func loadConnectedSlotIDs() -> Set<AccountSlotID> {
+        let fm = FileManager.default
+        var candidates: [URL] = []
+        if let url = connectionsFileURL { candidates.append(url) }
+        if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("connections.json")
+            if !candidates.contains(where: { $0.path == fallback.path }) { candidates.append(fallback) }
+        }
+        for url in candidates {
+            guard fm.fileExists(atPath: url.path), let data = try? Data(contentsOf: url),
+                  let state = try? JSONDecoder().decode(ConnectionBox.self, from: data) else { continue }
+            var set = Set<AccountSlotID>()
+            for rawID in state.connectedSlotIDs {
+                if let id = AccountSlotID(rawValue: rawID) { set.insert(id) }
+                else if let alias = AccountSlotID.legacyAliases[rawID] { set.insert(alias) }
+            }
+            if !set.isEmpty { return set }
+        }
+        return []
+    }
+    private struct ConnectionBox: Codable { var connectedSlotIDs: Set<String> = [] }
+    /// Slots with isConnected patched from connections.json — so the widget never
+    /// shows every row as “Not connected” when the app has already connected.
+    /// - Parameter preferAvailablePreview: when true (placeholder/gallery), show as-if connected
+    ///   so the widget gallery never paints the system yellow error overlay.
+    static func catalogSlotsWithConnection(preferAvailablePreview: Bool = false) -> [AccountSlot] {
+        let connected = loadConnectedSlotIDs()
+        let hasAny = !connected.isEmpty
+        return AccountCatalog.slots.map { var s = $0; s.isConnected = preferAvailablePreview ? true : (hasAny ? connected.contains(s.slotID) : false); return s }
     }
 }
 
@@ -111,7 +159,7 @@ struct AgentUsageEntry: TimelineEntry {
 
 struct SmallProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> AgentUsageEntry {
-        AgentUsageEntry(date: Date(), presentations: AvailabilityEngine.deriveAll(slots: AccountCatalog.slots, snapshots: [:], now: Date()),
+        AgentUsageEntry(date: Date(), presentations: AvailabilityEngine.deriveAll(slots: WidgetStore.catalogSlotsWithConnection(preferAvailablePreview: true), snapshots: [:], now: Date()),
                         displayMode: .remaining, configuredSlotIDs: [], family: .small, isUnconfigured: false)
     }
     func snapshot(for configuration: SelectAccountIntent, in context: Context) async -> AgentUsageEntry {
@@ -124,12 +172,14 @@ struct SmallProvider: AppIntentTimelineProvider {
         let now = Date()
         let snaps = WidgetStore.loadSnapshots()
         let prefs = WidgetStore.loadPreferences()
+        let connected = WidgetStore.loadConnectedSlotIDs()
+        let slots = AccountCatalog.slots.map { var s = $0; s.isConnected = connected.contains(s.slotID); return s }
         let failures = loadFailures()
         let transient: [AccountSlotID: Date] = Dictionary(uniqueKeysWithValues: failures.compactMap { (id, rec) in
             guard rec.nextRetryAt != nil else { return nil }
             return (id, rec.attemptAt)
         })
-        let derived = AvailabilityEngine.deriveAll(slots: AccountCatalog.slots, snapshots: snaps, now: now, transientFailures: transient)
+        let derived = AvailabilityEngine.deriveAll(slots: slots, snapshots: snaps, now: now, transientFailures: transient)
         let filtered: [AccountPresentation]
         if configured.isEmpty { filtered = derived } else {
             let set = Set(configured)
@@ -165,7 +215,7 @@ struct SmallProvider: AppIntentTimelineProvider {
 
 struct MediumProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> AgentUsageEntry {
-        AgentUsageEntry(date: Date(), presentations: AvailabilityEngine.deriveAll(slots: AccountCatalog.slots, snapshots: [:], now: Date()),
+        AgentUsageEntry(date: Date(), presentations: AvailabilityEngine.deriveAll(slots: WidgetStore.catalogSlotsWithConnection(preferAvailablePreview: true), snapshots: [:], now: Date()),
                         displayMode: .remaining, configuredSlotIDs: [], family: .medium, isUnconfigured: false)
     }
     func snapshot(for configuration: SelectAccountsIntent, in context: Context) async -> AgentUsageEntry {
@@ -178,12 +228,14 @@ struct MediumProvider: AppIntentTimelineProvider {
         let now = Date()
         let snaps = WidgetStore.loadSnapshots()
         let prefs = WidgetStore.loadPreferences()
+        let connected = WidgetStore.loadConnectedSlotIDs()
+        let slots = AccountCatalog.slots.map { var s = $0; s.isConnected = connected.contains(s.slotID); return s }
         let failures = loadFailures()
         let transient: [AccountSlotID: Date] = Dictionary(uniqueKeysWithValues: failures.compactMap { (id, rec) in
             guard rec.nextRetryAt != nil else { return nil }
             return (id, rec.attemptAt)
         })
-        let derived = AvailabilityEngine.deriveAll(slots: AccountCatalog.slots, snapshots: snaps, now: now, transientFailures: transient)
+        let derived = AvailabilityEngine.deriveAll(slots: slots, snapshots: snaps, now: now, transientFailures: transient)
         let filtered: [AccountPresentation]
         if configured.isEmpty { filtered = derived } else {
             let set = Set(configured)
@@ -219,21 +271,25 @@ struct MediumProvider: AppIntentTimelineProvider {
 
 struct LargeProvider: TimelineProvider {
     func placeholder(in context: Context) -> AgentUsageEntry {
-        AgentUsageEntry(date: Date(), presentations: AvailabilityEngine.deriveAll(slots: AccountCatalog.slots, snapshots: [:], now: Date()),
+        AgentUsageEntry(date: Date(), presentations: AvailabilityEngine.deriveAll(slots: WidgetStore.catalogSlotsWithConnection(preferAvailablePreview: true), snapshots: [:], now: Date()),
                         displayMode: .remaining, configuredSlotIDs: [], family: .large, isUnconfigured: false)
     }
     func getSnapshot(in context: Context, completion: @escaping (AgentUsageEntry) -> Void) {
         let now = Date()
         let snaps = WidgetStore.loadSnapshots()
         let prefs = WidgetStore.loadPreferences()
-        completion(AgentUsageEntry(date: now, presentations: AvailabilityEngine.deriveAll(slots: AccountCatalog.slots, snapshots: snaps, now: now),
+        let connected = WidgetStore.loadConnectedSlotIDs()
+        let slots = AccountCatalog.slots.map { var s = $0; s.isConnected = connected.contains(s.slotID); return s }
+        completion(AgentUsageEntry(date: now, presentations: AvailabilityEngine.deriveAll(slots: slots, snapshots: snaps, now: now),
                                    displayMode: prefs.displayMode, configuredSlotIDs: [], family: .large, isUnconfigured: false))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<AgentUsageEntry>) -> Void) {
         let now = Date()
         let snaps = WidgetStore.loadSnapshots()
         let prefs = WidgetStore.loadPreferences()
-        let base = AgentUsageEntry(date: now, presentations: AvailabilityEngine.deriveAll(slots: AccountCatalog.slots, snapshots: snaps, now: now),
+        let connected = WidgetStore.loadConnectedSlotIDs()
+        let slots = AccountCatalog.slots.map { var s = $0; s.isConnected = connected.contains(s.slotID); return s }
+        let base = AgentUsageEntry(date: now, presentations: AvailabilityEngine.deriveAll(slots: slots, snapshots: snaps, now: now),
                                    displayMode: prefs.displayMode, configuredSlotIDs: [], family: .large, isUnconfigured: false)
         let next = now.addingTimeInterval(5 * 60)
         let nextEntry = AgentUsageEntry(date: next, presentations: base.presentations, displayMode: base.displayMode,
