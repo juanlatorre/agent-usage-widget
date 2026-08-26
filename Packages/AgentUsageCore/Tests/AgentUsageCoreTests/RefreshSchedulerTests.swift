@@ -61,9 +61,25 @@ import Foundation
         #expect(st.failure?.retryAfter == 17)
         #expect(st.failure?.nextRetryAt == clock.get().addingTimeInterval(17))
         #expect(scheduler.shouldFetch(slotID: .claude, trigger: .interval) == false)
-        #expect(scheduler.shouldFetch(slotID: .claude, trigger: .manualGlobal) == true)
+        #expect(scheduler.shouldFetch(slotID: .claude, trigger: .widget) == false)
+        // A server-directed rate limit is absolute: even manual triggers wait.
+        #expect(scheduler.shouldFetch(slotID: .claude, trigger: .manualGlobal) == false)
         clock.now = clock.now.addingTimeInterval(18)
         #expect(scheduler.shouldFetch(slotID: .claude, trigger: .interval) == true)
+    }
+
+    @Test func r5_transportFailureStillAllowsManualOverride() {
+        let clock = Clock(Date(timeIntervalSince1970: 1_000_000))
+        let scheduler = RefreshScheduler(
+            now: { clock.get() }, random: { 0.5 },
+            preferences: { DisplayPreferences(refreshInterval: .oneMinute) },
+            connectedSlots: { [.claude] },
+            snapshots: { [:] },
+            isAuthBlocked: { _ in false })
+        // Non-rate-limit backoff (e.g. transport) stays overridable manually.
+        scheduler.finishTransientFailure(slotID: .claude, category: .transport, retryAfter: nil)
+        #expect(scheduler.shouldFetch(slotID: .claude, trigger: .manualGlobal) == true)
+        #expect(scheduler.shouldFetch(slotID: .claude, trigger: .interval) == false)
     }
 
     @Test func r6_authRequiredStopsAutomaticRetries() {

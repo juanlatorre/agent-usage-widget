@@ -53,6 +53,8 @@ final class StatusModel {
     @ObservationIgnored private var refreshScheduler: RefreshScheduler?
     @ObservationIgnored private var refreshFailureStore: RefreshFailureStore?
     @ObservationIgnored private var refreshService: RefreshService?
+    /// Periodic tick that lets due/retry deadlines fire while the app is open.
+    @ObservationIgnored private var recoveryTimer: Timer?
     @ObservationIgnored var loginItemController: (any LoginItemControlling)?
 
     /// Injected clock for deterministic behavior and previews.
@@ -750,6 +752,22 @@ final class StatusModel {
         for (slotID, rec) in records { transientFailureAt[slotID] = rec.attemptAt }
         // If snapshots had expired resets, derive as historical UNAVAILABLE until verified (R8).
         refreshDerivedState()
+        startRecoveryTimer()
+    }
+
+    /// Drives due/retry deadlines while the app is open. Without this, a slot
+    /// whose rate limit expires mid-session (e.g. Claude's Retry-After window)
+    /// would stay stale until the next activation — there is no other periodic
+    /// trigger in the app. The tick is cheap: the scheduler gates every fetch
+    // behind nextRetryAt/nextDueAt, so nothing hits the network until due.
+    private func startRecoveryTimer() {
+        recoveryTimer?.invalidate()
+        recoveryTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let service = self.refreshService else { return }
+                await service.triggerGlobal(trigger: .interval)
+            }
+        }
     }
 
     /// Exposed for the helper/background path to drive fetches without duplicating Manager logic.

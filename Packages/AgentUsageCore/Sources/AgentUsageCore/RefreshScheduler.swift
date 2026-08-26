@@ -74,8 +74,13 @@ public final class RefreshScheduler: @unchecked Sendable {
         if st.inFlight { return false }
         let current = now()
         // Retry deadline: R7 — later of Retry-After/backoff vs target interval. A stored nextRetryAt wins.
-        if let failure = st.failure, let nextRetry = failure.nextRetryAt, current < nextRetry, !trigger.isSafeManualOverride {
-            return false
+        // A server-directed rate-limit deadline is absolute: no trigger (not even
+        // manual) may bypass it, because the provider will keep answering 429 and
+        // each request can extend the window.
+        if let failure = st.failure, let nextRetry = failure.nextRetryAt, current < nextRetry {
+            if failure.category == .rateLimited || !trigger.isSafeManualOverride {
+                return false
+            }
         }
         // Interval gating: don't refetch before nextDueAt for automatic triggers.
         if trigger.isAutomatic, let due = st.nextDueAt, current < due, !trigger.isSafeManualOverride {
@@ -99,8 +104,10 @@ public final class RefreshScheduler: @unchecked Sendable {
         }
         if st.authBlockedUntilReconnect { return false }
         let current = now()
-        if let failure = st.failure, let nextRetry = failure.nextRetryAt, current < nextRetry, !trigger.isSafeManualOverride {
-            return false
+        if let failure = st.failure, let nextRetry = failure.nextRetryAt, current < nextRetry {
+            if failure.category == .rateLimited || !trigger.isSafeManualOverride {
+                return false
+            }
         }
         if trigger.isAutomatic, let due = st.nextDueAt, current < due, !trigger.isSafeManualOverride {
             return false

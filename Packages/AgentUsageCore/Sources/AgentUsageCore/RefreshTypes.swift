@@ -24,7 +24,8 @@ public struct RefreshFailureRecord: Codable, Sendable, Equatable {
     }
 }
 
-/// Trigger kinds for refresh requests (R2, R9). Only safe manual overrides may bypass a retry deadline.
+/// Trigger kinds for refresh requests (R2, R9). Only safe manual overrides may
+/// bypass a retry deadline — and never a server-directed rate-limit deadline.
 public enum RefreshTrigger: Sendable, Equatable {
     case interval
     case appActivation
@@ -36,7 +37,11 @@ public enum RefreshTrigger: Sendable, Equatable {
 
     public var isSafeManualOverride: Bool {
         switch self {
-        case .manualGlobal, .manualPerAccount, .widget: return true
+        case .manualGlobal, .manualPerAccount: return true
+        // Widget timeline reloads are frequent and involuntary; letting them
+        // bypass retry deadlines hammer rate-limited providers (observed with
+        // Claude's ~55-min oauth-usage quota). Widgets render snapshots; they
+        // do not need to force network fetches.
         default: return false
         }
     }
