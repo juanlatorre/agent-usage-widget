@@ -18,8 +18,9 @@ public enum ClaudeKeychainImporter: Sendable {
     /// Prefers an active plan (team/max with non-null rateLimitTier) over an empty free tier.
     public static func load() -> ClaudeOAuthCredentials? {
         let all = allIdentities()
-        // Prefer a tier that looks like a funded plan (team/max), then any with a token.
-        if let preferred = all.first(where: { $0.credentials.accountUUID != nil }) { return preferred.credentials }
+        if let preferred = all.first(where: { $0.credentials.accountUUID != nil }) {
+            return preferred.credentials
+        }
         // Fallback: prefer the service that has a real subscription type in the raw Keychain payload.
         for (service, _) in all {
             let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
@@ -42,8 +43,12 @@ public enum ClaudeKeychainImporter: Sendable {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess else {
+            NSLog("[AgentUsageCore] keychain read '%@' failed: %d", service, status)
+            return nil
+        }
+        guard let data = result as? Data else { return nil }
         // Two shapes: either a JSON dict with {"claudeAiOauth": ...} or raw JSON string.
         if let creds = try? ClaudeCredentialsParser.parse(data: data) { return creds }
         // Sometimes the Keychain stores a JSON string that itself encodes the dict.
@@ -51,6 +56,12 @@ public enum ClaudeKeychainImporter: Sendable {
            let inner = str.data(using: .utf8),
            let creds = try? ClaudeCredentialsParser.parse(data: inner) {
             return creds
+        }
+        do {
+            _ = try ClaudeCredentialsParser.parse(data: data)
+        } catch {
+            NSLog("[AgentUsageCore] keychain '%@': parse failed (%@), data bytes=%d",
+                  service, String(describing: error), data.count)
         }
         return nil
     }

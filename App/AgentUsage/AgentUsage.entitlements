@@ -2,10 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Developer ID distribution: the main app is intentionally NOT sandboxed.
-	     Without a provisioning profile the App Group container is not blessed
-	     (reads 257 / writes 513), which broke persistence and the widget sync.
-	     State is shared via Application Support plus best-effort Group mirrors
-	     (SharedStoreLocations). Hardened runtime stays enabled at signing time. -->
+	<!-- Developer ID distribution: the main app is intentionally NOT sandboxed
+	     and carries no app-groups entitlement (Xcode would demand a Developer
+	     ID provisioning profile for it). The unsandboxed app shares state by
+	     writing the Team-prefixed group container directly (see
+	     SharedStoreLocations.ensureCanonicalGroupContainer); the sandboxed
+	     widget resolves that same container through its app-groups entitlement.
+	     Hardened runtime stays enabled at signing time. -->
 </dict>
 </plist>

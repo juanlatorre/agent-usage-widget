@@ -103,28 +103,57 @@ public final class ClaudeConnectionManager {
             return .failed
         }
 
-        guard let credentials = controller.credential(for: slotID) else {
+        var credentials = controller.credential(for: slotID)
+        if credentials == nil {
             return .authenticationRequired
         }
 
         do {
-            let result = try await provider.fetchUsage(credentials: credentials)
-            let snapshot = UsageSnapshot(
-                slotID: slotID,
-                provider: .claude,
-                windows: result.windows,
-                capturedAt: now(),
-                provenance: SourceDiagnostics(
-                    sourceKind: "claude-oauth-usage",
-                    sourceReliability: "undocumented-endpoint",
-                    notes: []))
-            return .updated(snapshot)
+            let result = try await provider.fetchUsage(credentials: credentials!)
+            return .updated(Self.snapshot(for: slotID, result: result, now: now()))
         } catch ClaudeUsageError.rateLimited(let retryAfter) {
             return .rateLimited(retryAfter: retryAfter)
-        } catch ClaudeUsageError.missingCredential, ClaudeUsageError.unauthorized {
+        } catch ClaudeUsageError.unauthorized {
+            // Expired access token on a synthetic Keychain connection: the
+            // imported credential carries no refresh token, so re-import the
+            // CLI's current token from the Claude Code Keychain entry and
+            // retry the fetch once with it.
+            let isSynthetic = connection(slotID)?.source.bookmark.isEmpty ?? false
+            NSLog("[AgentUsageCore] claude 401 on slot %@ (synthetic=%d) — re-importing", slotID.rawValue, isSynthetic)
+            guard isSynthetic,
+                  let fresh = ClaudeKeychainImporter.load(),
+                  fresh.accessToken != credentials?.accessToken else {
+                NSLog("[AgentUsageCore] claude re-import unavailable — auth required")
+                return .authenticationRequired
+            }
+            NSLog("[AgentUsageCore] claude re-imported fresh token, retrying fetch")
+            controller.updateCredentials(fresh, for: slotID, now: now())
+            do {
+                let result = try await provider.fetchUsage(credentials: fresh)
+                return .updated(Self.snapshot(for: slotID, result: result, now: now()))
+            } catch ClaudeUsageError.rateLimited(let retryAfter) {
+                return .rateLimited(retryAfter: retryAfter)
+            } catch ClaudeUsageError.missingCredential, ClaudeUsageError.unauthorized {
+                return .authenticationRequired
+            } catch {
+                return .failed
+            }
+        } catch ClaudeUsageError.missingCredential {
             return .authenticationRequired
         } catch {
             return .failed
         }
+    }
+
+    private static func snapshot(for slotID: AccountSlotID, result: ClaudeUsageResult, now: Date) -> UsageSnapshot {
+        UsageSnapshot(
+            slotID: slotID,
+            provider: .claude,
+            windows: result.windows,
+            capturedAt: now,
+            provenance: SourceDiagnostics(
+                sourceKind: "claude-oauth-usage",
+                sourceReliability: "undocumented-endpoint",
+                notes: []))
     }
 }

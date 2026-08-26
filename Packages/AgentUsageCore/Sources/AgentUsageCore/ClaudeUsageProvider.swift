@@ -101,8 +101,8 @@ public struct ClaudeUsageProvider: Sendable {
     public static func normalize(data: Data, now: Date) throws -> [UsageWindow] {
         do {
             let payload = try JSONDecoder().decode(Payload.self, from: data)
-            let fiveHour = canonicalWindow(from: payload.fiveHour, kind: .fiveHour)
-            let sevenDay = canonicalWindow(from: payload.sevenDay, kind: .weekly)
+            let fiveHour = canonicalWindow(from: payload.fiveHour, kind: .fiveHour, now: now)
+            let sevenDay = canonicalWindow(from: payload.sevenDay, kind: .weekly, now: now)
             return [fiveHour, sevenDay].compactMap { $0 }
         } catch let error as ClaudeUsageError {
             throw error
@@ -112,9 +112,29 @@ public struct ClaudeUsageProvider: Sendable {
     }
 
     private static func canonicalWindow(
-        from raw: RawWindow?, kind: UsageWindowKind
+        from raw: RawWindow?, kind: UsageWindowKind, now: Date
     ) -> UsageWindow? {
-        guard let raw, let resetAt = raw.parsedReset else { return nil }
+        guard let raw else { return nil }
+        // Inactive window: the endpoint reports utilization 0 with a null reset
+        // while no window is running (observed on five_hour). Dropping it made
+        // the engine derive UNAVAILABLE ("missing required window") even though
+        // nothing blocks usage — same normalization as Command Code's inactive
+        // 5-hour window. Emit used 0 with an estimated reset, honestly noted.
+        if let reported = raw.utilization, reported <= 0, raw.parsedReset == nil {
+            let reset = now.addingTimeInterval(kind == .fiveHour ? 5 * 60 * 60 : 7 * 24 * 60 * 60)
+            return UsageWindow(
+                id: kind,
+                name: kind.displayName,
+                isRequired: true,
+                used: 0,
+                limit: 100,
+                resetAt: reset,
+                sourceDiagnostics: SourceDiagnostics(
+                    sourceKind: "claude-oauth-usage",
+                    sourceReliability: "undocumented-endpoint",
+                    notes: ["\(kind.displayName.lowercased()) window inactive; reset time estimated"]))
+        }
+        guard let resetAt = raw.parsedReset else { return nil }
         // Null/absent utilization is incomplete data, not zero usage: dropping
         // the window derives UNAVAILABLE instead of fabricating capacity (R6).
         guard let reported = raw.utilization else { return nil }

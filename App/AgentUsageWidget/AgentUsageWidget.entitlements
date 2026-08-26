@@ -2,11 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Sandbox only. The historical `com.apple.security.app-groups` key was
+	     invalid (the real key is `application-groups`, which demands a
+	     Developer ID provisioning profile we don't have) — so the group
+	     container never resolved and the widget could never read shared data.
+	     Sharing now happens by mirroring into this extension's own container,
+	     which the sandbox always allows it to read. -->
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<key>com.apple.security.app-groups</key>
-	<array>
-		<string>group.com.juanlatorre.agent-usage</string>
-	</array>
+	<key>com.apple.security.network.client</key>
+	<true/>
 </dict>
 </plist>

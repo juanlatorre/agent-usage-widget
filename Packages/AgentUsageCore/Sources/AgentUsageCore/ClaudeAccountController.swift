@@ -204,6 +204,20 @@ public struct ClaudeAccountController: Sendable {
         return connection
     }
 
+    /// Replace the stored credential for a slot (e.g. a re-imported, fresh
+    /// OAuth token) and update the connection's imported identity in place.
+    public func updateCredentials(_ credentials: ClaudeOAuthCredentials, for slotID: AccountSlotID, now: Date) {
+        try? keychain.saveCredentials(credentials, account: slotID)
+        var connections = loadConnections()
+        if connections[slotID] != nil {
+            connections[slotID]?.importedIdentity = ClaudeIdentityMetadata(
+                accountUUID: credentials.accountUUID,
+                fingerprint: ClaudeProfileSource.fingerprint(credentials.accessToken))
+            connections[slotID]?.importedAt = now
+            try? saveConnections(connections)
+        }
+    }
+
     /// Synchronize the slot's Keychain credential with its source directory.
     ///
     /// Returns the refreshed connection when the source still holds the bound

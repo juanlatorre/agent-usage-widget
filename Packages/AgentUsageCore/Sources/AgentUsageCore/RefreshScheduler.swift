@@ -180,6 +180,16 @@ public final class RefreshScheduler: @unchecked Sendable {
         states[slotID] = st
     }
 
+    /// Teardown (app terminating, fetch cancelled mid-flight): clear inFlight
+    /// without recording a failure — a quit must not poison the persisted
+    /// failure store for the next launch.
+    public func finishTeardown(slotID: AccountSlotID) {
+        lock.lock(); defer { lock.unlock() }
+        guard var st = states[slotID] else { return }
+        st.inFlight = false
+        states[slotID] = st
+    }
+
     /// Whether a follow-up was requested during the last fetch (R2).
     public func hasPendingFollowUp(slotID: AccountSlotID) -> Bool {
         state(for: slotID).pendingFollowUp

@@ -110,6 +110,12 @@ public final class RefreshService: @unchecked Sendable {
         case .http(let status):
             scheduler.finishTransientFailure(slotID: slotID, category: .http, retryAfter: nil, sanitizedMessage: "http \(status)")
             if let rec = scheduler.state(for: slotID).failure { failureStore?.set(rec, for: slotID) }
+        case .transport(let msg) where msg.lowercased().contains("cancelled"):
+            // URLSession cancellation happens when the app terminates with
+            // fetches in flight. Recording those as failures poisoned the
+            // persisted store and every slot opened as Error (live incident:
+            // five -999 tasks at quit time). Treat teardown as a no-op.
+            scheduler.finishTeardown(slotID: slotID)
         case .transport(let msg):
             scheduler.finishTransientFailure(slotID: slotID, category: .transport, retryAfter: nil, sanitizedMessage: msg)
             if let rec = scheduler.state(for: slotID).failure { failureStore?.set(rec, for: slotID) }

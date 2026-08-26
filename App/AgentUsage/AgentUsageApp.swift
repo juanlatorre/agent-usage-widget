@@ -78,13 +78,18 @@ struct AgentUsageApp: App {
                 Self.seedZaiFixture(manager: zaiManager, root: root)
             }
         } else {
-            snapshotBase = SnapshotStore.defaultBaseURL(
-                appGroupID: "group.com.juanlatorre.agent-usage")
-            preferencesFile = PreferencesStore.defaultFileURL(
-                appGroupID: "group.com.juanlatorre.agent-usage")
+            // The unsandboxed app carries no app-groups entitlement (Xcode would
+            // demand a Developer ID provisioning profile), so it materializes the
+            // Team-prefixed group container by direct path. The sandboxed widget
+            // resolves this same container through its entitlement.
+            let sharedGroup = SharedStoreLocations.ensureCanonicalGroupContainer()
+            snapshotBase = sharedGroup.map { $0.appendingPathComponent("snapshots", isDirectory: true) }
+                ?? SnapshotStore.defaultBaseURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
+            preferencesFile = sharedGroup.map { $0.appendingPathComponent("preferences.json", isDirectory: false) }
+                ?? PreferencesStore.defaultFileURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
             let keychain = KeychainStore(serviceNamePrefix: "com.juanlatorre.agent-usage")
-            let connectionsFile = ClaudeAccountController.defaultFileURL(
-                appGroupID: "group.com.juanlatorre.agent-usage")
+            let connectionsFile = sharedGroup.map { $0.appendingPathComponent("claude-connections.json", isDirectory: false) }
+                ?? ClaudeAccountController.defaultFileURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
             if let connectionsFile {
                 claudeManager = ClaudeConnectionManager(
                     controller: ClaudeAccountController(
@@ -97,8 +102,8 @@ struct AgentUsageApp: App {
                         connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
                             .appendingPathComponent("claude-connections.json")))
             }
-            let codexConnectionsFile = CodexAccountController.defaultFileURL(
-                appGroupID: "group.com.juanlatorre.agent-usage")
+            let codexConnectionsFile = sharedGroup.map { $0.appendingPathComponent("codex-connections.json", isDirectory: false) }
+                ?? CodexAccountController.defaultFileURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
             if let codexConnectionsFile {
                 codexManager = CodexConnectionManager(
                     controller: CodexAccountController(
@@ -111,8 +116,8 @@ struct AgentUsageApp: App {
                         connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
                             .appendingPathComponent("codex-connections.json")))
             }
-            let openCodeConnectionsFile = OpenCodeAccountController.defaultFileURL(
-                appGroupID: "group.com.juanlatorre.agent-usage")
+            let openCodeConnectionsFile = sharedGroup.map { $0.appendingPathComponent("opencode-connections.json", isDirectory: false) }
+                ?? OpenCodeAccountController.defaultFileURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
             if let openCodeConnectionsFile {
                 openCodeManager = OpenCodeConnectionManager(
                     controller: OpenCodeAccountController(
@@ -125,8 +130,8 @@ struct AgentUsageApp: App {
                         connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
                             .appendingPathComponent("opencode-connections.json")))
             }
-            let commandCodeConnectionsFile = CommandCodeAccountController.defaultFileURL(
-                appGroupID: "group.com.juanlatorre.agent-usage")
+            let commandCodeConnectionsFile = sharedGroup.map { $0.appendingPathComponent("commandcode-connections.json", isDirectory: false) }
+                ?? CommandCodeAccountController.defaultFileURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
             if let commandCodeConnectionsFile {
                 commandCodeManager = CommandCodeConnectionManager(
                     controller: CommandCodeAccountController(
@@ -139,8 +144,8 @@ struct AgentUsageApp: App {
                         connectionsFileURL: URL(fileURLWithPath: NSTemporaryDirectory())
                             .appendingPathComponent("commandcode-connections.json")))
             }
-            let zaiConnectionsFile = ZaiAccountController.defaultFileURL(
-                appGroupID: "group.com.juanlatorre.agent-usage")
+            let zaiConnectionsFile = sharedGroup.map { $0.appendingPathComponent("zai-connections.json", isDirectory: false) }
+                ?? ZaiAccountController.defaultFileURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
             if let zaiConnectionsFile {
                 zaiManager = ZaiConnectionManager(
                     controller: ZaiAccountController(
@@ -154,12 +159,13 @@ struct AgentUsageApp: App {
                             .appendingPathComponent("zai-connections.json")))
             }
         }
-        let appGroupID = "group.com.juanlatorre.agent-usage"
+        let appGroupID = SharedStoreLocations.canonicalAppGroupID
         let snapshotStore = snapshotBase.map { base in
             SnapshotStore(
                 baseURL: base,
                 mirrors: [
                     SnapshotStore.appSupportBaseURL(),
+                    SharedStoreLocations.widgetContainerDirectory().map { $0.appendingPathComponent("snapshots", isDirectory: true) },
                     SnapshotStore.groupContainerBaseURL(appGroupID: appGroupID),
                 ].compactMap { $0 }.filter { $0 != base })
         }
@@ -181,7 +187,8 @@ struct AgentUsageApp: App {
         // Wire 07 refresh service so onAppear/.task handleAppActivation actually fetches
         // (before this, refreshService was nil and the app stayed Loading... forever).
         if let snapshotStore {
-            let failureFile = RefreshFailureStore.defaultFileURL(appGroupID: "group.com.juanlatorre.agent-usage")
+            let failureFile = SharedStoreLocations.groupContainer(appGroupID: SharedStoreLocations.canonicalAppGroupID).map { $0.appendingPathComponent("refresh-failures.json") }
+                ?? RefreshFailureStore.defaultFileURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
             let failureStore = failureFile.map { RefreshFailureStore(fileURL: $0) }
                 ?? RefreshFailureStore(fileURL: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("refresh-failures.json"))
             let scheduler = RefreshScheduler(

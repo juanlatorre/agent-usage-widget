@@ -9,6 +9,11 @@ import Foundation
 /// path — so the sandboxed widget extension observes the same state.
 public enum SharedStoreLocations {
 
+    /// App Group identifier (iOS-style). Developer ID builds resolve no
+    /// blessed container for it — sharing happens via the widget-extension
+    /// container mirror below plus this group's direct path.
+    public static let canonicalAppGroupID = "group.com.juanlatorre.agent-usage"
+
     /// `~/Library/Application Support/AgentUsageWidget` — the app-writable
     /// canonical location shared with pre-group builds.
     public static func appSupportDirectory() -> URL? {
@@ -18,9 +23,29 @@ public enum SharedStoreLocations {
         return appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true)
     }
 
+    /// The widget extension's own sandbox container — the one location a
+    /// sandboxed widget can always read. The unsandboxed main app mirrors
+    /// shared state here by direct path (no provisioning profile needed).
+    public static let widgetBundleID = "com.juanlatorre.AgentUsage.widget"
+
+    public static func widgetContainerDirectory() -> URL? {
+        let fm = FileManager.default
+        let dir = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Containers", isDirectory: true)
+            .appendingPathComponent(widgetBundleID, isDirectory: true)
+            .appendingPathComponent("Data/Library/Application Support/AgentUsageWidget", isDirectory: true)
+        do {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        } catch {
+            return nil
+        }
+    }
+
     /// The App Group container: the system-resolved URL when available,
     /// otherwise the well-known direct path when the directory exists
-    /// (usable by an unsandboxed main app for mirroring).
+    /// (usable by an unsandboxed main app for mirroring). Tries the canonical
+    /// Team-prefixed group first, then the legacy one.
     public static func groupContainer(appGroupID: String) -> URL? {
         let fm = FileManager.default
         if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
@@ -32,19 +57,48 @@ public enum SharedStoreLocations {
         return fm.fileExists(atPath: direct.path) ? direct : nil
     }
 
+    /// Best canonical group container across both group identifiers.
+    public static func anyGroupContainer() -> URL? {
+        groupContainer(appGroupID: canonicalAppGroupID)
+    }
+
+    /// The canonical group container, created when missing. Only the
+    /// unsandboxed main app may call this.
+    public static func ensureCanonicalGroupContainer() -> URL? {
+        let fm = FileManager.default
+        if let resolved = fm.containerURL(forSecurityApplicationGroupIdentifier: canonicalAppGroupID) {
+            return resolved
+        }
+        let direct = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Group Containers", isDirectory: true)
+            .appendingPathComponent(canonicalAppGroupID, isDirectory: true)
+        do {
+            try fm.createDirectory(at: direct, withIntermediateDirectories: true)
+            return direct
+        } catch {
+            NSLog("[AgentUsageCore] could not create canonical group container: %@", String(describing: error))
+            return nil
+        }
+    }
+
     /// Standard mirror set for a file named `fileName`: the Application
     /// Support directory and the App Group container, deduplicated against
     /// (and excluding) the primary URL.
     ///
     /// Mirrors only participate for canonical storage locations — arbitrary
     /// primaries (unit-test temp directories) stay fully isolated.
-    public static func mirrorURLs(forFileName fileName: String, primary: URL?, appGroupID: String = "group.com.juanlatorre.agent-usage") -> [URL] {
+    public static func mirrorURLs(forFileName fileName: String, primary: URL?, appGroupID: String = SharedStoreLocations.canonicalAppGroupID) -> [URL] {
         if let primary, !isCanonicalLocation(primary, appGroupID: appGroupID) {
             return []
         }
         var urls: [URL] = []
         if let appSupport = appSupportDirectory() {
             urls.append(appSupport.appendingPathComponent(fileName, isDirectory: false))
+        }
+        // The widget-extension container is the one place a sandboxed widget
+        // can read without a provisioned app group — always mirror there.
+        if let widgetContainer = widgetContainerDirectory() {
+            urls.append(widgetContainer.appendingPathComponent(fileName, isDirectory: false))
         }
         if let group = groupContainer(appGroupID: appGroupID) {
             urls.append(group.appendingPathComponent(fileName, isDirectory: false))
@@ -60,6 +114,7 @@ public enum SharedStoreLocations {
         let path = url.path
         if let group = groupContainer(appGroupID: appGroupID)?.path, path.hasPrefix(group) { return true }
         if let appSupport = appSupportDirectory()?.path, path.hasPrefix(appSupport) { return true }
+        if let widgetContainer = widgetContainerDirectory()?.path, path.hasPrefix(widgetContainer) { return true }
         return false
     }
 

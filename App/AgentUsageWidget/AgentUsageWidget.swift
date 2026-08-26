@@ -31,18 +31,35 @@ struct SelectAccountsIntent: AppIntent, WidgetConfigurationIntent {
 struct RefreshWidgetIntent: AppIntent {
     static var title: LocalizedStringResource = "Refresh Now"
     static var description = IntentDescription("Refresh the selected accounts.")
-    static var openAppWhenRun: Bool = false
+    /// The widget extension cannot read the login Keychain (partitioned by
+    /// Team), so it cannot fetch itself. Opening the app lets the real
+    /// fetcher run and consume the request immediately.
+    static var openAppWhenRun: Bool = true
     @Parameter(title: "Account IDs") var accountIDs: [String]?
     init(accountIDs: [String]? = nil) { self.accountIDs = accountIDs }
     init() {}
     func perform() async throws -> some IntentResult {
         if let ids = accountIDs, !ids.isEmpty {
-            let base = WidgetStore.widgetRefreshRequestURL
+            let fm = FileManager.default
+            // Canonical Team-prefixed group first (the one the app reads);
+            // legacy group as fallback for older installs.
+            var bases: [URL] = []
+            for groupID in [SharedStoreLocations.canonicalAppGroupID] {
+                if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID) {
+                    bases.append(container)
+                } else {
+                    let direct = fm.homeDirectoryForCurrentUser
+                        .appendingPathComponent("Library/Group Containers", isDirectory: true)
+                        .appendingPathComponent(groupID, isDirectory: true)
+                    if fm.fileExists(atPath: direct.path) { bases.append(direct) }
+                }
+            }
             let payload: [String: Any] = ["slotIDs": ids, "requestedAt": ISO8601DateFormatter().string(from: Date())]
             if let data = try? JSONSerialization.data(withJSONObject: payload) {
-                let dir = base.deletingLastPathComponent()
-                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                try? data.write(to: base, options: .atomic)
+                for base in bases {
+                    try? fm.createDirectory(at: base, withIntermediateDirectories: true)
+                    try? data.write(to: base.appendingPathComponent("widget-refresh-request.json"), options: .atomic)
+                }
             }
         }
         return .result()
@@ -73,7 +90,7 @@ struct AccountQuery: EntityQuery {
 // MARK: - Timeline
 
 struct WidgetStore {
-    static var appGroupID: String { "group.com.juanlatorre.agent-usage" }
+    static var appGroupID: String { SharedStoreLocations.canonicalAppGroupID }
     static var snapshotBaseURL: URL? { SnapshotStore.defaultBaseURL(appGroupID: appGroupID) }
     static var preferencesFileURL: URL? { PreferencesStore.defaultFileURL(appGroupID: appGroupID) }
     static var connectionsFileURL: URL? {
@@ -100,13 +117,14 @@ struct WidgetStore {
         let fm = FileManager.default
         var bases: [URL] = []
         if let base = snapshotBaseURL { bases.append(base) }
-        let homeGroup = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Group Containers/\(appGroupID)/snapshots", isDirectory: true)
-        if !bases.contains(where: { $0.path == homeGroup.path }) { bases.append(homeGroup) }
+        for groupID in [appGroupID] {
+            let homeGroup = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Group Containers/\(groupID)/snapshots", isDirectory: true)
+            if !bases.contains(where: { $0.path == homeGroup.path }) { bases.append(homeGroup) }
+        }
         if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("snapshots", isDirectory: true)
             if !bases.contains(where: { $0.path == fallback.path }) { bases.append(fallback) }
         }
-        if !bases.contains(where: { $0.path == homeGroup.path }) { bases.append(homeGroup) }
         var tried: [String] = []
         for base in bases {
             let store = SnapshotStore(baseURL: base)
@@ -139,8 +157,10 @@ struct WidgetStore {
         let fm = FileManager.default
         var candidates: [URL] = []
         if let url = connectionsFileURL { candidates.append(url) }
-        let homeGroupConn = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Group Containers/\(appGroupID)/connections.json")
-        if !candidates.contains(where: { $0.path == homeGroupConn.path }) { candidates.append(homeGroupConn) }
+        for groupID in [appGroupID] {
+            let homeGroupConn = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Group Containers/\(groupID)/connections.json")
+            if !candidates.contains(where: { $0.path == homeGroupConn.path }) { candidates.append(homeGroupConn) }
+        }
         if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("connections.json")
             if !candidates.contains(where: { $0.path == fallback.path }) { candidates.append(fallback) }

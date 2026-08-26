@@ -187,6 +187,7 @@ final class StatusModel {
 
     /// App activation trigger (R9).
     func handleAppActivation() async {
+        consumeWidgetRefreshRequest()
         guard let refreshService else {
             // Fallback when RefreshService hasn't been wired (pre-07 builds):
             // at least refresh the connected slots directly via their managers.
@@ -194,6 +195,37 @@ final class StatusModel {
             return
         }
         await refreshService.triggerGlobal(trigger: .appActivation)
+    }
+
+    /// Consume a pending widget "Refresh Now" request (written by the widget's
+    /// RefreshWidgetIntent, which opens the app). Refreshes the requested
+    /// slots immediately via the manual per-account trigger (safe override:
+    /// non-rate-limit backoff may be bypassed by explicit user intent).
+    private func consumeWidgetRefreshRequest() {
+        let fm = FileManager.default
+        var candidates: [URL] = []
+        for groupID in [SharedStoreLocations.canonicalAppGroupID] {
+            if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID) {
+                candidates.append(container.appendingPathComponent("widget-refresh-request.json"))
+            }
+            let direct = fm.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Group Containers", isDirectory: true)
+                .appendingPathComponent(groupID, isDirectory: true)
+                .appendingPathComponent("widget-refresh-request.json")
+            candidates.append(direct)
+        }
+        for url in candidates where fm.fileExists(atPath: url.path) {
+            defer { try? fm.removeItem(at: url) }
+            guard let data = try? Data(contentsOf: url),
+                  let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let rawIDs = payload["slotIDs"] as? [String] else { continue }
+            let slotIDs = rawIDs.compactMap { AccountSlotID(rawValue: $0) }
+            guard !slotIDs.isEmpty, let refreshService else { continue }
+            NSLog("[AgentUsage] consuming widget refresh request for %@", rawIDs.joined(separator: ","))
+            Task { @MainActor in
+                await refreshService.triggerSlots(slotIDs, trigger: .manualPerAccount)
+            }
+        }
     }
 
     private func refreshConnectedSlotsDirectly() async {
