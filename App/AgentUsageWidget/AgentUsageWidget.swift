@@ -93,20 +93,39 @@ struct WidgetStore {
         return fm.temporaryDirectory.appendingPathComponent("widget-refresh-request.json")
     }
     // Merge Group Container + Application Support fallback — widget must see snapshots written via fallback too
+    // Hardened: also try explicit home-relative Group Container path when containerURL is nil in some sandboxed contexts.
     static func loadSnapshots() -> [AccountSlotID: UsageSnapshot] {
         var result: [AccountSlotID: UsageSnapshot] = [:]
         let fm = FileManager.default
         var bases: [URL] = []
         if let base = snapshotBaseURL { bases.append(base) }
+        // Explicit Group Containers fallback (bypasses containerURL entitlement lookup in widget extension)
+        let homeGroup = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Group Containers/\(appGroupID)/snapshots", isDirectory: true)
+        if fm.fileExists(atPath: homeGroup.path) || fm.fileExists(atPath: homeGroup.deletingLastPathComponent().path) {
+            if !bases.contains(where: { $0.path == homeGroup.path }) { bases.append(homeGroup) }
+        }
         if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("snapshots", isDirectory: true)
             if !bases.contains(where: { $0.path == fallback.path }) { bases.append(fallback) }
+            // Container Data path for sandboxed app: ~/Library/Containers/<bundle>/Data/Library/Application Support
+            let containerAppSupport = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Containers/com.juanlatorre.AgentUsage/Data/Library/Application Support/AgentUsageWidget/snapshots", isDirectory: true)
+            if fm.fileExists(atPath: containerAppSupport.path), !bases.contains(where: { $0.path == containerAppSupport.path }) {
+                bases.append(containerAppSupport)
+            }
+        }
+        // Last resort: global Application Support path (legacy non-sandboxed runs)
+        let globalFallback = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/AgentUsageWidget/snapshots", isDirectory: true)
+        if fm.fileExists(atPath: globalFallback.path), !bases.contains(where: { $0.path == globalFallback.path }) {
+            bases.append(globalFallback)
         }
         for base in bases {
             let store = SnapshotStore(baseURL: base)
             for slot in AccountCatalog.slots where result[slot.slotID] == nil {
                 if case .loaded(let snap) = store.load(slotID: slot.slotID) { result[slot.slotID] = snap }
             }
+        }
+        if result.isEmpty {
+            NSLog("[AgentUsageWidget] loadSnapshots empty — bases tried: %@", bases.map(\.path).joined(separator: ", "))
         }
         return result
     }
@@ -118,10 +137,17 @@ struct WidgetStore {
         let fm = FileManager.default
         var candidates: [URL] = []
         if let url = connectionsFileURL { candidates.append(url) }
+        // Explicit home-relative Group Containers paths
+        let homeGroupConn = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Group Containers/\(appGroupID)/connections.json")
+        if !candidates.contains(where: { $0.path == homeGroupConn.path }) { candidates.append(homeGroupConn) }
         if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("connections.json")
             if !candidates.contains(where: { $0.path == fallback.path }) { candidates.append(fallback) }
+            let containerAppSupport = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Containers/com.juanlatorre.AgentUsage/Data/Library/Application Support/AgentUsageWidget/connections.json")
+            if !candidates.contains(where: { $0.path == containerAppSupport.path }) { candidates.append(containerAppSupport) }
         }
+        let globalFallback = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/AgentUsageWidget/connections.json")
+        if !candidates.contains(where: { $0.path == globalFallback.path }) { candidates.append(globalFallback) }
         for url in candidates {
             guard fm.fileExists(atPath: url.path), let data = try? Data(contentsOf: url),
                   let state = try? JSONDecoder().decode(ConnectionBox.self, from: data) else { continue }
@@ -132,6 +158,7 @@ struct WidgetStore {
             }
             if !set.isEmpty { return set }
         }
+        NSLog("[AgentUsageWidget] loadConnectedSlotIDs empty — candidates: %@", candidates.map(\.path).joined(separator: ", "))
         return []
     }
     private struct ConnectionBox: Codable { var connectedSlotIDs: Set<String> = [] }

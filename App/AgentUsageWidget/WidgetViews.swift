@@ -230,51 +230,39 @@ struct LargeView: View {
                     .accessibilityLabel("Refresh all accounts")
                 }
                 .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 6)
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(ordered) { p in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: statusSymbol(p.status)).foregroundStyle(statusColor(p.status)).font(.caption)
-                                    Text(p.label).font(.caption.weight(.semibold)).lineLimit(1)
-                                    Text(statusCaption(p.status)).font(.caption2).foregroundStyle(.secondary)
-                                    Spacer()
-                                    if let limiting = p.limitingWindow {
-                                        ZStack {
-                                            RingView(fraction: limiting.fraction(for: entry.displayMode), status: p.status)
-                                                .frame(width: 24, height: 24)
-                                            Text("\(Int((limiting.fraction(for: entry.displayMode) * 100).rounded()))%").font(.caption2).monospacedDigit()
-                                        }
-                                    }
-                                }
-                                .accessibilityElement(children: .combine)
-                                .accessibilityLabel("\(p.label), \(statusCaption(p.status))")
-                                if p.status == .blocked {
-                                    ForEach(p.blockers) { BlockerPill(blocker: $0) }
-                                    if let at = p.availableAt {
-                                        Text("Available in \(at, style: .timer)").font(.caption2).foregroundStyle(.secondary)
-                                            .accessibilityLabel("Available at \(at.formatted(date: .omitted, time: .shortened))")
-                                    }
-                                }
-                                // R4: every declared required window.
-                                ForEach(p.historicalWindows, id: \.id) { w in
-                                    WindowBar(window: w, degraded: p.status != .available && p.status != .blocked, displayMode: entry.displayMode)
-                                }
-                                if p.historicalWindows.isEmpty && p.status != .notConnected {
-                                    Text("No usage data yet.").font(.caption2).foregroundStyle(.secondary)
-                                }
-                                if !p.diagnosticNotes.isEmpty {
-                                    ForEach(p.diagnosticNotes, id: \.self) { note in
-                                        Text(note).font(.caption2).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(ordered.prefix(5)) { p in
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 8) {
+                                Image(systemName: statusSymbol(p.status)).foregroundStyle(statusColor(p.status)).font(.caption)
+                                Text(p.label).font(.caption.weight(.semibold)).lineLimit(1)
+                                Text(statusCaption(p.status)).font(.caption2).foregroundStyle(.secondary)
+                                Spacer()
+                                if let limiting = p.limitingWindow {
+                                    ZStack {
+                                        RingView(fraction: limiting.fraction(for: entry.displayMode), status: p.status)
+                                            .frame(width: 24, height: 24)
+                                        Text("\(Int((limiting.fraction(for: entry.displayMode) * 100).rounded()))%").font(.caption2).monospacedDigit()
                                     }
                                 }
                             }
-                            .padding(8)
-                            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("\(p.label), \(statusCaption(p.status))")
+                            if p.status == .blocked {
+                                ForEach(p.blockers.prefix(1)) { BlockerPill(blocker: $0) }
+                            }
+                            // One bar per slot in widget — compact for Large without scrolling
+                            if let w = p.historicalWindows.first {
+                                WindowBar(window: w, degraded: p.status != .available && p.status != .blocked, displayMode: entry.displayMode)
+                            } else if p.status != .notConnected {
+                                Text("No usage data yet.").font(.caption2).foregroundStyle(.secondary)
+                            }
                         }
+                        .padding(7)
+                        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
                     }
-                    .padding(.horizontal, 12)
                 }
+                .padding(.horizontal, 12)
             }
             .widgetURL(URL(string: "agent-usage://open"))
         }
