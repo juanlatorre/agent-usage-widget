@@ -16,7 +16,7 @@ import Foundation
         let (store, _) = try makeStore()
         let prefs = store.load()
         #expect(prefs.displayMode == .remaining)
-        #expect(prefs.refreshInterval == .oneMinute)
+        #expect(prefs.refreshInterval == .fiveMinutes)
     }
 
     @Test func roundTripPreservesValues() throws {
@@ -46,7 +46,7 @@ import Foundation
 
         let prefs = store.load()
         #expect(prefs.displayMode == .remaining)
-        #expect(prefs.refreshInterval == .oneMinute)
+        #expect(prefs.refreshInterval == .fiveMinutes)
     }
 
     @Test func corruptFileIsQuarantinedAndDefaultsApply() throws {
@@ -57,7 +57,7 @@ import Foundation
 
         let prefs = store.load()
         #expect(prefs.displayMode == .remaining)
-        #expect(prefs.refreshInterval == .oneMinute)
+        #expect(prefs.refreshInterval == .fiveMinutes)
 
         let leftovers = try FileManager.default
             .contentsOfDirectory(atPath: url.deletingLastPathComponent().path)

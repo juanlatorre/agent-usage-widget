@@ -107,6 +107,13 @@ final class ZaiSectionViewModel: ObservableObject {
             switch o {
             case .updated: statusMessage = "Connection works."
             case .authenticationRequired, .sourceIdentityChanged: statusMessage = "Credentials were rejected. Reconnect this account."
+            case .rateLimited(let retryAfter):
+                if let retryAfter {
+                    let minutes = Int(ceil(retryAfter / 60))
+                    statusMessage = "Z.ai rate limited. Waiting \(minutes) min before retrying."
+                } else {
+                    statusMessage = "Z.ai rate limited. Backing off before retrying."
+                }
             case .failed: statusMessage = "Could not reach Z.ai. Check your network and try again."
             }
             refreshDisplayState()

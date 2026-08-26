@@ -118,8 +118,12 @@ public struct DisplayPreferences: Codable, Sendable, Hashable {
     /// Target automatic refresh interval.
     public var refreshInterval: RefreshInterval
 
+    /// Default cadence: five minutes. Claude's OAuth usage endpoint enforces a
+    /// small hourly quota (observed server Retry-After ≈ 55 min), so a 1-minute
+    /// default rate-limits itself into permanent staleness. Honored Retry-After
+    /// (RefreshService) plus this cadence keeps every provider sustainable.
     public init(displayMode: DisplayMode = .remaining,
-                refreshInterval: RefreshInterval = .oneMinute) {
+                refreshInterval: RefreshInterval = .fiveMinutes) {
         self.displayMode = displayMode
         self.refreshInterval = refreshInterval
     }

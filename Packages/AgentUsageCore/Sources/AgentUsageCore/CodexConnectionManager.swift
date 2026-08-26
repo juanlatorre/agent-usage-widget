@@ -17,6 +17,10 @@ public enum CodexRefreshOutcome: Equatable, Sendable {
     /// The bound directory now holds a different identity; reconnection required.
     case sourceIdentityChanged
     /// Transient failure (transport, 429, 5xx); status stays ERROR/UNAVAILABLE.
+    /// Rate limited by the provider; the server-directed Retry-After must
+    /// reach the scheduler verbatim instead of degrading to blind backoff.
+    case rateLimited(retryAfter: TimeInterval?)
+
     case failed
 }
 
@@ -117,6 +121,8 @@ public final class CodexConnectionManager {
                     sourceReliability: "undocumented-endpoint",
                     notes: []))
             return .updated(snapshot)
+        } catch CodexUsageError.rateLimited(let retryAfter) {
+            return .rateLimited(retryAfter: retryAfter)
         } catch CodexUsageError.missingCredential, CodexUsageError.unauthorized {
             return .authenticationRequired
         } catch {

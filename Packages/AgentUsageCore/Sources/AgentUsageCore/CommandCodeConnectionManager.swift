@@ -10,6 +10,10 @@ public enum CommandCodeRefreshOutcome: Equatable, Sendable {
     case authenticationRequired
     case sourceIdentityChanged
     case unavailable(reason: String)
+    /// Rate limited by the provider; the server-directed Retry-After must
+    /// reach the scheduler verbatim instead of degrading to blind backoff.
+    case rateLimited(retryAfter: TimeInterval?)
+
     case failed
 }
 
@@ -73,6 +77,8 @@ public final class CommandCodeConnectionManager {
                                               sourceReliability: "official-endpoint",
                                               notes: notes))
             return .updated(snapshot)
+        } catch CommandCodeUsageError.rateLimited(let retryAfter) {
+            return .rateLimited(retryAfter: retryAfter)
         } catch CommandCodeUsageError.missingCredential, CommandCodeUsageError.unauthorized {
             return .authenticationRequired
         } catch {

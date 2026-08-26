@@ -123,6 +123,13 @@ final class CommandCodeSectionViewModel: ObservableObject {
             case .unavailable: statusMessage = "Subscription is inactive or usage cannot be confirmed."
             case .authenticationRequired, .sourceIdentityChanged:
                 statusMessage = "Credentials were rejected. Reconnect this account."
+            case .rateLimited(let retryAfter):
+                if let retryAfter {
+                    let minutes = Int(ceil(retryAfter / 60))
+                    statusMessage = "Command Code rate limited. Waiting \(minutes) min before retrying."
+                } else {
+                    statusMessage = "Command Code rate limited. Backing off before retrying."
+                }
             case .failed: statusMessage = "Could not reach Command Code. Check your network and try again."
             }
             refreshDisplayState()

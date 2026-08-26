@@ -186,6 +186,13 @@ final class CodexSectionViewModel: ObservableObject {
                 statusMessage = "Connection works."
             case .authenticationRequired, .sourceIdentityChanged:
                 statusMessage = "Credentials were rejected. Reconnect this account."
+            case .rateLimited(let retryAfter):
+                if let retryAfter {
+                    let minutes = Int(ceil(retryAfter / 60))
+                    statusMessage = "Codex rate limited. Waiting \(minutes) min before retrying."
+                } else {
+                    statusMessage = "Codex rate limited. Backing off before retrying."
+                }
             case .failed:
                 statusMessage = "Could not reach ChatGPT. Check your network and try again."
             }

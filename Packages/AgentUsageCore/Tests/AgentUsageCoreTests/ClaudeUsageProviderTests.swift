@@ -124,11 +124,30 @@ import XCTest
             #expect(result == .authenticationRequired)
         }
         try await assertStatus(429) { result in
-            if case .failed = result {} else { Issue.record("429 must be a degraded failure") }
+            // 429 must surface the server-directed Retry-After to the scheduler
+            // (R7) instead of a blind backoff failure.
+            if case .rateLimited = result {} else { Issue.record("429 must be rateLimited with Retry-After") }
         }
         try await assertStatus(500) { result in
             if case .failed = result {} else { Issue.record("5xx must be a degraded failure") }
         }
+    }
+
+    @Test func rateLimitedCarriesServerRetryAfter() async throws {
+        StubProtocol.responders[StubProtocol.usageURL] = { _ in
+            StubProtocol.Response(status: 429, body: "{}", headers: ["Retry-After": "3306"])
+        }
+        defer { StubProtocol.responders.removeAll() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubProtocol.self]
+        let manager = ClaudeConnectionManager(
+            controller: try controllerWithStoredCredential(),
+            provider: ClaudeUsageProvider(session: URLSession(configuration: configuration), now: { self.now }))
+        let outcome = await manager.refresh(slotID: .claude)
+        guard case let .rateLimited(retryAfter) = outcome else {
+            Issue.record("expected rateLimited, got \(outcome)"); return
+        }
+        #expect(retryAfter == 3306)
     }
 
     private func assertStatus(

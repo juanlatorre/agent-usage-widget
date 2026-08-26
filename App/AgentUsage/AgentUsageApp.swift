@@ -199,6 +199,9 @@ struct AgentUsageApp: App {
                 fetcher: fetcher,
                 onSnapshotPublished: { snap in Task { @MainActor in model.storeSnapshot(snap) } }
             )
+            // Restore server-directed Retry-After deadlines across launches so a
+            // rate-limited provider is not re-hit immediately on every relaunch.
+            scheduler.hydrateFailures(failureStore.load())
             model.attachRefreshService(scheduler: scheduler, failureStore: failureStore, service: service)
         }
         return model

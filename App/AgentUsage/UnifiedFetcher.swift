@@ -39,6 +39,7 @@ enum UnifiedFetcher {
         case .updated(let s): return .success(s)
         case .authenticationRequired: return .failure(.unauthorized(status: 401))
         case .sourceIdentityChanged: return .failure(.sourceIdentityChanged)
+        case .rateLimited(let retryAfter): return .failure(.rateLimited(retryAfter: retryAfter))
         case .failed: return .failure(.transport("transient failure"))
         }
     }
@@ -48,6 +49,7 @@ enum UnifiedFetcher {
         case .updated(let s): return .success(s)
         case .authenticationRequired: return .failure(.unauthorized(status: 401))
         case .sourceIdentityChanged: return .failure(.sourceIdentityChanged)
+        case .rateLimited(let retryAfter): return .failure(.rateLimited(retryAfter: retryAfter))
         case .failed: return .failure(.transport("transient failure"))
         }
     }
@@ -57,6 +59,7 @@ enum UnifiedFetcher {
         case .updated(let s): return .success(s)
         case .authenticationRequired: return .failure(.unauthorized(status: 401))
         case .sourceIdentityChanged: return .failure(.sourceIdentityChanged)
+        case .rateLimited(let retryAfter): return .failure(.rateLimited(retryAfter: retryAfter))
         case .failed: return .failure(.transport("transient failure"))
         }
     }
@@ -67,6 +70,7 @@ enum UnifiedFetcher {
         case .unavailable: return .failure(.incomplete("subscription unavailable"))
         case .authenticationRequired: return .failure(.unauthorized(status: 401))
         case .sourceIdentityChanged: return .failure(.sourceIdentityChanged)
+        case .rateLimited(let retryAfter): return .failure(.rateLimited(retryAfter: retryAfter))
         case .failed: return .failure(.transport("transient failure"))
         }
     }
@@ -76,6 +80,7 @@ enum UnifiedFetcher {
         case .updated(let s): return .success(s)
         case .authenticationRequired: return .failure(.unauthorized(status: 401))
         case .sourceIdentityChanged: return .failure(.sourceIdentityChanged)
+        case .rateLimited(let retryAfter): return .failure(.rateLimited(retryAfter: retryAfter))
         case .failed: return .failure(.transport("transient failure"))
         }
     }

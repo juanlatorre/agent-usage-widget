@@ -556,6 +556,10 @@ final class StatusModel {
         case .authenticationRequired, .sourceIdentityChanged:
             authenticationRequiredSlots.insert(slotID)
             transientFailureAt[slotID] = nil
+        case .rateLimited:
+            // The scheduler (via RefreshService) honors the server Retry-After.
+            transientFailureAt[slotID] = now()
+            break
         case .failed:
             transientFailureAt[slotID] = now()
             break
@@ -578,6 +582,10 @@ final class StatusModel {
         case .authenticationRequired, .sourceIdentityChanged:
             authenticationRequiredSlots.insert(slotID)
             transientFailureAt[slotID] = nil
+        case .rateLimited:
+            // The scheduler (via RefreshService) honors the server Retry-After.
+            transientFailureAt[slotID] = now()
+            break
         case .failed:
             transientFailureAt[slotID] = now()
             break
@@ -598,6 +606,10 @@ final class StatusModel {
         case .authenticationRequired, .sourceIdentityChanged:
             authenticationRequiredSlots.insert(slotID)
             transientFailureAt[slotID] = nil
+        case .rateLimited:
+            // The scheduler (via RefreshService) honors the server Retry-After.
+            transientFailureAt[slotID] = now()
+            break
         case .failed:
             transientFailureAt[slotID] = now()
             break
@@ -709,6 +721,10 @@ final class StatusModel {
         case .authenticationRequired, .sourceIdentityChanged:
             authenticationRequiredSlots.insert(slotID)
             transientFailureAt[slotID] = nil
+        case .rateLimited:
+            // The scheduler (via RefreshService) honors the server Retry-After.
+            transientFailureAt[slotID] = now()
+            break
         case .failed:
             transientFailureAt[slotID] = now()
             break
@@ -857,6 +873,10 @@ final class StatusModel {
         case .authenticationRequired, .sourceIdentityChanged:
             authenticationRequiredSlots.insert(slotID)
             transientFailureAt[slotID] = nil
+        case .rateLimited:
+            // The scheduler (via RefreshService) honors the server Retry-After.
+            transientFailureAt[slotID] = now()
+            break
         case .failed:
             transientFailureAt[slotID] = now()
             break

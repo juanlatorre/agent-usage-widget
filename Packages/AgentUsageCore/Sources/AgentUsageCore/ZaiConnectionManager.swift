@@ -6,6 +6,10 @@ public enum ZaiRefreshOutcome: Equatable, Sendable {
     case updated(UsageSnapshot)
     case authenticationRequired
     case sourceIdentityChanged
+    /// Rate limited by the provider; the server-directed Retry-After must
+    /// reach the scheduler verbatim instead of degrading to blind backoff.
+    case rateLimited(retryAfter: TimeInterval?)
+
     case failed
 }
 
@@ -45,6 +49,8 @@ public final class ZaiConnectionManager {
             let snapshot = UsageSnapshot(slotID: slotID, provider: .zai, windows: result.windows, capturedAt: now(),
                                          provenance: SourceDiagnostics(sourceKind: "zai-quota", sourceReliability: "official-endpoint", notes: []))
             return .updated(snapshot)
+        } catch ZaiUsageError.rateLimited(let retryAfter) {
+            return .rateLimited(retryAfter: retryAfter)
         } catch ZaiUsageError.missingCredential, ZaiUsageError.unauthorized {
             return .authenticationRequired
         } catch { return .failed }

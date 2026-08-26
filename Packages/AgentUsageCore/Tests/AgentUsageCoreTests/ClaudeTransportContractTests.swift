@@ -8,6 +8,7 @@ final class StubProtocol: URLProtocol {
     struct Response {
         let status: Int
         let body: String
+        var headers: [String: String] = [:]
     }
 
     nonisolated(unsafe) static var responders: [URL: (URLRequest) -> Response] = [:]
@@ -34,7 +35,8 @@ final class StubProtocol: URLProtocol {
         let http = HTTPURLResponse(
             url: url, statusCode: response.status,
             httpVersion: "HTTP/1.1",
-            headerFields: response.status == 429 ? ["Retry-After": "17"] : [:])!
+            headerFields: response.headers.isEmpty && response.status == 429
+                ? ["Retry-After": "17"] : response.headers)!
 
         client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(response.body.utf8))
