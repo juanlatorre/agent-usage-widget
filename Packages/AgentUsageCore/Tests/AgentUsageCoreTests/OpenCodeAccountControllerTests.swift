@@ -116,6 +116,42 @@ struct OpenCodeAccountControllerTests {
             try ctx.controller.synchronize(slotID: .openCodeGO)
         }
     }
+    // MARK: Manual paste sanitization
+
+    @Test func manualConnectSanitizesPastedSettingsBlob() throws {
+        let ctx = try makeContext()
+        try ctx.controller.connectManually(slotID: .openCodeGO, apiKey: #"{"apiKey":"sk_pasted"}"#, now: now)
+        #expect(ctx.store.openCodeCredentials(account: .openCodeGO)?.apiKey == "sk_pasted")
+        try ctx.controller.connectManually(slotID: .openCodeGO, apiKey: "Bearer sk_bearer_ok", now: now)
+        #expect(ctx.store.openCodeCredentials(account: .openCodeGO)?.apiKey == "sk_bearer_ok")
+        try ctx.controller.connectManually(slotID: .openCodeGO, apiKey: "\"sk_quoted_ok\",", now: now)
+        #expect(ctx.store.openCodeCredentials(account: .openCodeGO)?.apiKey == "sk_quoted_ok")
+    }
+
+    @Test func manualConnectAcceptsNativeAuthJSON() throws {
+        let ctx = try makeContext()
+        try ctx.controller.connectManually(slotID: .openCodeGO, apiKey: #"{"opencode-go":{"key":"sk_native"}}"#, now: now)
+        #expect(ctx.store.openCodeCredentials(account: .openCodeGO)?.apiKey == "sk_native")
+    }
+
+    @Test func sanitizerRejectsUnusableInput() {
+        #expect(OpenCodeAccountController.sanitizedApiKey("   ") == nil)
+        #expect(OpenCodeAccountController.sanitizedApiKey("garbage input") == nil)
+        #expect(OpenCodeAccountController.sanitizedApiKey(#"{"apiKey":123}"#) == nil)
+        #expect(OpenCodeAccountController.sanitizedApiKey("key=sk-embedded_ok123 note") == "sk-embedded_ok123")
+        #expect(OpenCodeAccountController.sanitizedApiKey("  sk_padded  ") == "sk_padded")
+    }
+
+    @Test func credentialSelfHealsLegacyPastedJSONBlob() throws {
+        let ctx = try makeContext()
+        _ = try ctx.controller.connectManually(slotID: .openCodeGO, apiKey: "sk_real_key", now: now)
+        try ctx.store.saveOpenCodeCredentials(
+            OpenCodeCredentials(apiKey: #"{"apiKey":"sk_real_key"}"#), account: .openCodeGO)
+        #expect(ctx.controller.credential(for: .openCodeGO)?.apiKey == "sk_real_key")
+        #expect(ctx.store.openCodeCredentials(account: .openCodeGO)?.apiKey == "sk_real_key")
+        let connection = ctx.controller.loadConnections()[.openCodeGO]
+        #expect(connection?.importedIdentity.fingerprint == OpenCodeProfileSource.fingerprint("sk_real_key"))
+    }
 }
 
 @Suite(.serialized)

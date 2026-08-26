@@ -13,10 +13,16 @@ public struct PreferencesStore: Sendable {
     public static let currentSchemaVersion = 1
 
     public let fileURL: URL
+    /// Best-effort mirror locations (App Group container) receiving the same
+    /// writes so the sandboxed widget extension sees the same preferences.
+    public let mirrorURLs: [URL]
 
-    /// - Parameter fileURL: full path of the preferences JSON file.
-    public init(fileURL: URL) {
+    /// - Parameters:
+    ///   - fileURL: full path of the preferences JSON file.
+    ///   - mirrors: extra best-effort locations mirrored on writes.
+    public init(fileURL: URL, mirrors: [URL] = []) {
         self.fileURL = fileURL
+        self.mirrorURLs = mirrors.filter { $0 != fileURL }
     }
 
     private var fileManager: FileManager { .default }
@@ -40,42 +46,69 @@ public struct PreferencesStore: Sendable {
 
     /// Load stored preferences; invalid or absent data yields defaults.
     ///
-    /// A corrupt record is renamed aside (quarantined) so a future healthy write can occur.
+    /// A corrupt primary record is renamed aside (quarantined) so a future
+    /// healthy write can occur; mirror records are consulted when the primary
+    /// is absent or unreadable (permission-denied group container).
     public func load() -> DisplayPreferences {
-        guard fileManager.fileExists(atPath: fileURL.path) else { return DisplayPreferences() }
+        if let loaded = decodeRecord(at: fileURL, quarantineOnCorrupt: true) {
+            return loaded
+        }
+        for mirror in mirrorURLs {
+            if let loaded = decodeRecord(at: mirror, quarantineOnCorrupt: false) {
+                return loaded
+            }
+        }
+        return DisplayPreferences()
+    }
+
+    private func decodeRecord(at url: URL, quarantineOnCorrupt: Bool) -> DisplayPreferences? {
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
         do {
-            let data = try Data(contentsOf: fileURL)
+            let data = try Data(contentsOf: url)
             let decoder = JSONDecoder()
             let wrapper = try decoder.decode(PreferencesFile.self, from: data)
             return wrapper.preferences.sanitized()
         } catch {
-            quarantineCorruptRecord()
-            return DisplayPreferences()
+            if quarantineOnCorrupt { quarantineCorruptRecord() }
+            return nil
         }
     }
 
     // MARK: - Write
 
     /// Persist preferences atomically. A failed write leaves the previous file intact;
-    /// in-memory state remains valid regardless.
+    /// in-memory state remains valid regardless. Mirrors are best-effort.
     public func save(_ preferences: DisplayPreferences) throws {
-        let directory = fileURL.deletingLastPathComponent()
-        if !fileManager.fileExists(atPath: directory.path) {
-            do {
-                try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-            } catch {
-                throw PreferencesStoreError.directoryCreationFailed(String(describing: error))
-            }
-        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let wrapper = PreferencesFile(version: Self.currentSchemaVersion, preferences: preferences)
+        let data: Data
         do {
-            let data = try encoder.encode(wrapper)
-            try data.write(to: fileURL, options: .atomic)
+            data = try encoder.encode(wrapper)
         } catch {
             throw PreferencesStoreError.writeFailed(String(describing: error))
         }
+        do {
+            try fileManager.createDirectory(
+                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            let primary = error
+            // Fall back to the first mirror that accepts the write.
+            for mirror in mirrorURLs {
+                if (try? writeMirror(data, to: mirror)) != nil { return }
+            }
+            throw PreferencesStoreError.writeFailed(String(describing: primary))
+        }
+        for mirror in mirrorURLs {
+            _ = try? writeMirror(data, to: mirror)
+        }
+    }
+
+    private func writeMirror(_ data: Data, to url: URL) throws {
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
     }
 
     // MARK: - Plumbing

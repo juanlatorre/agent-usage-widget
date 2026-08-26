@@ -201,10 +201,27 @@ public struct CommandCodeUsageProvider: Sendable {
     static func normalizedWindow(kind: UsageWindowKind, raw: RawWindowLimit?, now: Date) -> UsageWindow? {
         guard let raw,
               let used = raw.used, used.isFinite,
-              let cap = raw.cap, cap.isFinite, cap > 0,
-              let resetAt = raw.resetAt else {
+              let cap = raw.cap, cap.isFinite, cap > 0 else {
             return nil
         }
+        // Inactive 5-hour window: the official endpoint reports `used: 0` with
+        // `resetAt: 0` while no window is running. Dropping it made the engine
+        // derive UNAVAILABLE ("missing required window") even though nothing
+        // blocks usage — the account is genuinely available. Emit the window
+        // with used 0 and an estimated reset (window cannot end before it could
+        // next expire), annotated so the derivation stays honest.
+        let rawReset = raw.resetAt ?? 0
+        if kind == .fiveHour, rawReset <= 0, used == 0, raw.exceeded != true {
+            return UsageWindow(
+                id: kind, name: kind.displayName, isRequired: true,
+                used: 0, limit: cap,
+                resetAt: now.addingTimeInterval(5 * 60 * 60),
+                sourceDiagnostics: SourceDiagnostics(
+                    sourceKind: "commandcode-credits",
+                    sourceReliability: "official-endpoint",
+                    notes: ["5-hour window inactive; reset time estimated"]))
+        }
+        guard let resetAt = raw.resetAt else { return nil }
         // Epoch milliseconds must be finite and not overflow Date.
         // Valid range: 0 < ms < ~8.64e15 (year 275760). Negative/zero/huge → incomplete.
         guard resetAt > 0, resetAt < 8_640_000_000_000_000 else { return nil }

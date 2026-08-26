@@ -217,4 +217,40 @@ struct CommandCodeUsageProviderTests {
         let outcome = await manager.refresh(slotID: .commandCodeGOAT)
         #expect(outcome == .authenticationRequired)
     }
+
+    // MARK: Inactive 5-hour window
+
+    @Test func inactiveFiveHourWindowYieldsEstimatedWindowNotMissing() throws {
+        // The official endpoint reports used 0 / resetAt 0 while no 5-hour
+        // window is running; that must not degrade the slot to "missing
+        // required window" — the account is genuinely available.
+        let data = Data(creditsJSON(
+            fiveHour: (0, 14, 0),
+            weekly: (24.94, 35, 1_760_000_000_000 + 86_400_000)).utf8)
+        let windows = try CommandCodeUsageProvider.normalizeCredits(data: data, now: now)
+        let five = windows.first { $0.id == .fiveHour }
+        #expect(five != nil)
+        #expect(five?.used == 0)
+        #expect(five?.resetAt == now.addingTimeInterval(5 * 60 * 60))
+        #expect(five?.sourceDiagnostics.notes.contains("5-hour window inactive; reset time estimated") == true)
+        let slot = AccountCatalog.slot(for: .commandCodeGOAT)!
+        let snap = UsageSnapshot(slotID: .commandCodeGOAT, provider: .commandCode, windows: windows, capturedAt: now)
+        #expect(AvailabilityEngine.derive(slot: slot, snapshot: snap, now: now).status == .available)
+    }
+
+    @Test func inactiveFiveHourWithExceededFlagIsStillIncomplete() throws {
+        // exceeded:true with resetAt 0 is contradictory data — reject (AC3).
+        let data = Data(#"{"windowLimits":{"fiveHour":{"used":0,"cap":14,"exceeded":true,"resetAt":0},"weekly":{"used":1,"cap":35,"resetAt":\#(Int64(1_760_000_000_000 + 86_400_000)),"exceeded":false}}}"#.utf8)
+        let windows = try CommandCodeUsageProvider.normalizeCredits(data: data, now: now)
+        #expect(windows.first { $0.id == .fiveHour } == nil)
+    }
+
+    @Test func activeButZeroResetWithUsageIsStillIncomplete() throws {
+        // used > 0 with resetAt 0 is genuinely malformed — no window (AC3).
+        let data = Data(creditsJSON(
+            fiveHour: (3, 14, 0),
+            weekly: (1, 35, 1_760_000_000_000 + 86_400_000)).utf8)
+        let windows = try CommandCodeUsageProvider.normalizeCredits(data: data, now: now)
+        #expect(windows.first { $0.id == .fiveHour } == nil)
+    }
 }

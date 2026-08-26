@@ -62,15 +62,9 @@ public struct CommandCodeAccountController: Sendable {
         let fm = FileManager.default
         var merged: [AccountSlotID: CommandCodeConnection] = [:]
         // Load Application Support fallback first (always writable), then Group Container overwrites.
-        let candidates: [URL] = {
-            var urls: [URL] = []
-            if fileURL.path.contains("Group Containers"),
-               let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-                urls.append(appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("commandcode-connections.json"))
-            }
-            urls.append(fileURL)
-            return urls
-        }()
+        // Primary wins: candidates ordered so the primary location is read last.
+        let candidates: [URL] = SharedStoreLocations.mirrorURLs(
+            forFileName: fileURL.lastPathComponent, primary: fileURL) + [fileURL]
         for url in candidates {
             guard fm.fileExists(atPath: url.path),
                   let data = try? Data(contentsOf: url),
@@ -83,24 +77,16 @@ public struct CommandCodeAccountController: Sendable {
     }
 
     public func saveConnections(_ connections: [AccountSlotID: CommandCodeConnection]) throws {
-        let fm = FileManager.default
-        let dir = fileURL.deletingLastPathComponent()
-        if !fm.fileExists(atPath: dir.path) { try? fm.createDirectory(at: dir, withIntermediateDirectories: true) }
         var encoded: [String: CommandCodeConnection] = [:]
         for (slot, c) in connections { encoded[slot.rawValue] = c }
         let data = try JSONEncoder().encode(encoded)
-        do { try data.write(to: fileURL, options: .atomic) } catch {
-            if fileURL.path.contains("Group Containers") {
-                let ns = error as NSError
-                guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { throw error }
-                let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("commandcode-connections.json")
-                if !fm.fileExists(atPath: fallback.deletingLastPathComponent().path) { try fm.createDirectory(at: fallback.deletingLastPathComponent(), withIntermediateDirectories: true) }
-                try data.write(to: fallback, options: .atomic)
-                NSLog("[AgentUsage] commandcode-connections fallback (Group→AppSupport) after %@/%d", ns.domain, ns.code)
-                return
-            }
-            throw error
-        }
+        // Primary write plus best-effort mirrors (App Group container) so the
+        // sandboxed widget extension observes the same connection state.
+        try SharedStoreLocations.writeMirrored(
+            data,
+            primary: fileURL,
+            mirrors: SharedStoreLocations.mirrorURLs(
+                forFileName: fileURL.lastPathComponent, primary: fileURL))
     }
 
     public static func inspectIdentity(of file: URL) throws -> CommandCodeIdentityMetadata {
@@ -141,20 +127,64 @@ public struct CommandCodeAccountController: Sendable {
         return connection
     }
 
+    /// Sanitizes a manually pasted Command Code credential.
+    ///
+    /// Users frequently paste the entire settings JSON (`{"apiKey":"user_…"}`),
+    /// a `Bearer` header, quoted values, or the key embedded in surrounding
+    /// text. All of those previously reached the API verbatim and failed with
+    /// 401 UNAUTHORIZED, so the slot degraded to history-only. Mirrors the
+    /// Z.ai manual-entry sanitizer.
+    public static func sanitizedApiKey(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        // Whole settings file pasted: extract the key via the auth parser
+        // (handles both `apiKey` and legacy `api_key`). Unusable JSON is
+        // rejected outright instead of falling through as a literal key.
+        if trimmed.first == "{" {
+            guard let data = trimmed.data(using: .utf8),
+                  let creds = try? CommandCodeAuthParser.parse(data: data) else {
+                return nil
+            }
+            return creds.apiKey
+        }
+        var source = trimmed
+        if source.lowercased().hasPrefix("bearer ") {
+            source = String(source.dropFirst(7)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if source.isEmpty { return nil }
+        }
+        if !source.contains(where: { $0.isWhitespace }) {
+            var cleaned = source.trimmingCharacters(in: CharacterSet(charactersIn: "\"'`°,;"))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            while let last = cleaned.last, ",;".contains(last) {
+                cleaned = String(cleaned.dropLast())
+                if cleaned.isEmpty { return nil }
+            }
+            guard !cleaned.isEmpty, cleaned.lowercased() != "bearer" else { return nil }
+            return cleaned
+        }
+        // Key embedded in surrounding text (e.g. `apiKey=user_… here`).
+        let pattern = #"user_[A-Za-z0-9_\-]{5,}"#
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)),
+           let range = Range(match.range, in: source) {
+            return String(source[range])
+        }
+        return nil
+    }
+
     @discardableResult
     public func connectManually(slotID: AccountSlotID, apiKey: String, now: Date = Date()) throws -> CommandCodeConnection {
-        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains(where: { $0.isWhitespace || $0.isNewline }) else {
+        guard let sanitized = Self.sanitizedApiKey(apiKey) else {
             throw CommandCodeConnectionError.noUsableCredentials
         }
-        let credentials = CommandCodeCredentials(apiKey: trimmed)
+        let credentials = CommandCodeCredentials(apiKey: sanitized)
         try keychain.saveCommandCodeCredentials(credentials, account: slotID)
         let synthetic = CommandCodeProfileSource(
-            fileIdentity: "manual:\(CommandCodeProfileSource.fingerprint(trimmed))",
+            fileIdentity: "manual:\(CommandCodeProfileSource.fingerprint(sanitized))",
             fileName: "manual entry", bookmark: Data())
         let connection = CommandCodeConnection(
             source: synthetic,
-            importedIdentity: CommandCodeIdentityMetadata(fingerprint: CommandCodeProfileSource.fingerprint(trimmed)),
+            importedIdentity: CommandCodeIdentityMetadata(fingerprint: CommandCodeProfileSource.fingerprint(sanitized)),
             importedAt: now)
         var updated = loadConnections(); updated[slotID] = connection
         try saveConnections(updated)
@@ -185,7 +215,25 @@ public struct CommandCodeAccountController: Sendable {
     }
 
     public func credential(for slotID: AccountSlotID) -> CommandCodeCredentials? {
-        keychain.commandCodeCredentials(account: slotID)
+        guard let stored = keychain.commandCodeCredentials(account: slotID) else { return nil }
+        // Self-heal credentials saved before manual-entry sanitization existed
+        // (e.g. a whole `{"apiKey":"…"}` settings blob pasted as the key, which
+        // the API rejects with 401). A well-formed key is returned untouched.
+        guard let sanitized = Self.sanitizedApiKey(stored.apiKey),
+              sanitized != stored.apiKey else { return stored }
+        let healed = CommandCodeCredentials(apiKey: sanitized)
+        try? keychain.saveCommandCodeCredentials(healed, account: slotID)
+        var connections = loadConnections()
+        if connections[slotID] != nil {
+            let fingerprint = CommandCodeProfileSource.fingerprint(sanitized)
+            connections[slotID]?.importedIdentity = CommandCodeIdentityMetadata(fingerprint: fingerprint)
+            connections[slotID]?.source = CommandCodeProfileSource(
+                fileIdentity: "manual:\(fingerprint)",
+                fileName: "manual entry", bookmark: Data())
+            try? saveConnections(connections)
+        }
+        NSLog("[AgentUsageCore] healed commandcode credential for %@", slotID.rawValue)
+        return healed
     }
 
     public func isConnected(_ slotID: AccountSlotID) -> Bool {

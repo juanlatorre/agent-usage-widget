@@ -68,6 +68,54 @@ struct CommandCodeAccountControllerTests {
         }
     }
 
+    // MARK: Manual paste sanitization
+
+    @Test func manualConnectSanitizesPastedSettingsJSON() throws {
+        let ctx = try makeContext()
+        let c = try ctx.controller.connectManually(slotID: .commandCodeGOAT, apiKey: #"{"apiKey":"user_sample_paste"}"#, now: now)
+        #expect(ctx.store.commandCodeCredentials(account: .commandCodeGOAT)?.apiKey == "user_sample_paste")
+        #expect(c.source.fileIdentity == "manual:\(CommandCodeProfileSource.fingerprint("user_sample_paste"))")
+    }
+
+    @Test func manualConnectSanitizesBearerQuotedAndEmbeddedKeys() throws {
+        let ctx = try makeContext()
+        try ctx.controller.connectManually(slotID: .commandCodeGOAT, apiKey: "Bearer user_bearer_ok", now: now)
+        #expect(ctx.store.commandCodeCredentials(account: .commandCodeGOAT)?.apiKey == "user_bearer_ok")
+        try ctx.controller.connectManually(slotID: .commandCodeGOAT, apiKey: "\"user_quoted_ok\",", now: now)
+        #expect(ctx.store.commandCodeCredentials(account: .commandCodeGOAT)?.apiKey == "user_quoted_ok")
+        try ctx.controller.connectManually(slotID: .commandCodeGOAT, apiKey: "apiKey=user_embedded_ok and some text", now: now)
+        #expect(ctx.store.commandCodeCredentials(account: .commandCodeGOAT)?.apiKey == "user_embedded_ok")
+    }
+
+    @Test func sanitizerRejectsUnusableInput() {
+        #expect(CommandCodeAccountController.sanitizedApiKey("   ") == nil)
+        #expect(CommandCodeAccountController.sanitizedApiKey("not a key at all") == nil)
+        #expect(CommandCodeAccountController.sanitizedApiKey(#"{"apiKey":123}"#) == nil)
+        #expect(CommandCodeAccountController.sanitizedApiKey("Bearer ") == nil)
+        #expect(CommandCodeAccountController.sanitizedApiKey(#"{"api_key":"user_legacy"}"#) == "user_legacy")
+        #expect(CommandCodeAccountController.sanitizedApiKey("  user_padded  ") == "user_padded")
+    }
+
+    @Test func credentialSelfHealsLegacyPastedJSONBlob() throws {
+        let ctx = try makeContext()
+        _ = try ctx.controller.connectManually(slotID: .commandCodeGOAT, apiKey: "user_real_key", now: now)
+        // Simulate a pre-sanitizer save: the whole settings blob stored as the key.
+        try ctx.store.saveCommandCodeCredentials(
+            CommandCodeCredentials(apiKey: #"{"apiKey":"user_real_key"}"#), account: .commandCodeGOAT)
+        let healed = ctx.controller.credential(for: .commandCodeGOAT)
+        #expect(healed?.apiKey == "user_real_key")
+        #expect(ctx.store.commandCodeCredentials(account: .commandCodeGOAT)?.apiKey == "user_real_key")
+        let connection = ctx.controller.loadConnections()[.commandCodeGOAT]
+        #expect(connection?.importedIdentity.fingerprint == CommandCodeProfileSource.fingerprint("user_real_key"))
+    }
+
+    @Test func credentialLeavesWellFormedKeyUntouched() throws {
+        let ctx = try makeContext()
+        _ = try ctx.controller.connectManually(slotID: .commandCodeGOAT, apiKey: "user_clean_key", now: now)
+        _ = ctx.controller.credential(for: .commandCodeGOAT)
+        #expect(ctx.store.commandCodeCredentials(account: .commandCodeGOAT)?.apiKey == "user_clean_key")
+    }
+
     @Test func syncRefreshesWhenIdentityMatches() throws {
         let ctx = try makeContext()
         _ = try ctx.controller.connect(slotID: .commandCodeGOAT, file: ctx.authFile, now: now)

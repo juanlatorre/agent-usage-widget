@@ -107,15 +107,9 @@ public struct CodexAccountController: Sendable {
     public func loadConnections() -> [AccountSlotID: CodexConnection] {
         let fm = FileManager.default
         var merged: [AccountSlotID: CodexConnection] = [:]
-        let candidates: [URL] = {
-            var urls: [URL] = []
-            if fileURL.path.contains("Group Containers"),
-               let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-                urls.append(appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("codex-connections.json"))
-            }
-            urls.append(fileURL)
-            return urls
-        }()
+        // Primary wins: candidates ordered so the primary location is read last.
+        let candidates: [URL] = SharedStoreLocations.mirrorURLs(
+            forFileName: fileURL.lastPathComponent, primary: fileURL) + [fileURL]
         for url in candidates {
             guard fm.fileExists(atPath: url.path),
                   let data = try? Data(contentsOf: url),
@@ -140,24 +134,16 @@ public struct CodexAccountController: Sendable {
 
     /// Persist connections atomically; secrets never enter this file (parent R12).
     public func saveConnections(_ connections: [AccountSlotID: CodexConnection]) throws {
-        let fm = FileManager.default
-        let dir = fileURL.deletingLastPathComponent()
-        if !fm.fileExists(atPath: dir.path) { try? fm.createDirectory(at: dir, withIntermediateDirectories: true) }
         var encoded: [String: CodexConnection] = [:]
         for (slot, c) in connections { encoded[slot.rawValue] = c }
         let data = try JSONEncoder().encode(encoded)
-        do { try data.write(to: fileURL, options: .atomic) } catch {
-            let ns = error as NSError
-            if ns.domain == NSCocoaErrorDomain && (ns.code == 513 || ns.code == 4) {
-                guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { throw error }
-                let fallback = appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true).appendingPathComponent("codex-connections.json")
-                if !fm.fileExists(atPath: fallback.deletingLastPathComponent().path) { try fm.createDirectory(at: fallback.deletingLastPathComponent(), withIntermediateDirectories: true) }
-                try data.write(to: fallback, options: .atomic)
-                NSLog("[AgentUsage] codex-connections fallback write to %@ after %d", fallback.path, ns.code)
-                return
-            }
-            throw error
-        }
+        // Primary write plus best-effort mirrors (App Group container) so the
+        // sandboxed widget extension observes the same connection state.
+        try SharedStoreLocations.writeMirrored(
+            data,
+            primary: fileURL,
+            mirrors: SharedStoreLocations.mirrorURLs(
+                forFileName: fileURL.lastPathComponent, primary: fileURL))
     }
 
     // MARK: - Inspection (pre-consent)

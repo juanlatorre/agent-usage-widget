@@ -232,7 +232,13 @@ final class StatusModel {
         let state = ConnectionState(
             connectedSlotIDs: Set(slots.filter(\.isConnected).map { $0.slotID.rawValue }))
         if let data = try? JSONEncoder().encode(state) {
-            try? data.write(to: connectionsURL, options: .atomic)
+            // Mirror to the App Group container so the sandboxed widget
+            // extension derives the same connected/not-connected state.
+            try? SharedStoreLocations.writeMirrored(
+                data,
+                primary: connectionsURL,
+                mirrors: SharedStoreLocations.mirrorURLs(
+                    forFileName: connectionsURL.lastPathComponent, primary: connectionsURL))
         }
     }
 

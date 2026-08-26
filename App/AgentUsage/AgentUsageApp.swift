@@ -154,8 +154,21 @@ struct AgentUsageApp: App {
                             .appendingPathComponent("zai-connections.json")))
             }
         }
-        let snapshotStore = snapshotBase.map { SnapshotStore(baseURL: $0) }
-        let preferencesStore = preferencesFile.map { PreferencesStore(fileURL: $0) }
+        let appGroupID = "group.com.juanlatorre.agent-usage"
+        let snapshotStore = snapshotBase.map { base in
+            SnapshotStore(
+                baseURL: base,
+                mirrors: [
+                    SnapshotStore.appSupportBaseURL(),
+                    SnapshotStore.groupContainerBaseURL(appGroupID: appGroupID),
+                ].compactMap { $0 }.filter { $0 != base })
+        }
+        let preferencesStore = preferencesFile.map { file in
+            PreferencesStore(
+                fileURL: file,
+                mirrors: SharedStoreLocations.mirrorURLs(
+                    forFileName: file.lastPathComponent, primary: file))
+        }
         let model = StatusModel(
             snapshotStore: snapshotStore,
             preferencesStore: preferencesStore,
