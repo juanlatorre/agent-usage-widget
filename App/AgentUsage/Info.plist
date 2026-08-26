@@ -28,5 +28,16 @@
 	<string></string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>agent-usage</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>agent-usage</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

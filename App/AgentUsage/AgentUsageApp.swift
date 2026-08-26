@@ -6,12 +6,14 @@ struct AgentUsageApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             RootView()
                 .environment(statusModel)
                 .frame(minWidth: 720, minHeight: 520)
+                .handlesExternalEvents(preferring: ["agent-usage"], allowing: ["agent-usage"])
         }
         .windowToolbarStyle(.unified)
+        .handlesExternalEvents(matching: ["agent-usage"])
         .commands {
             CommandGroup(replacing: .newItem) {}
         }
