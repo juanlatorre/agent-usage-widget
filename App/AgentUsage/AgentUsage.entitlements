@@ -3,11 +3,12 @@
 <plist version="1.0">
 <dict>
 	<!-- Developer ID distribution: the main app is intentionally NOT sandboxed
-	     and carries no app-groups entitlement (Xcode would demand a Developer
-	     ID provisioning profile for it). The unsandboxed app shares state by
-	     writing the Team-prefixed group container directly (see
-	     SharedStoreLocations.ensureCanonicalGroupContainer); the sandboxed
-	     widget resolves that same container through its app-groups entitlement.
-	     Hardened runtime stays enabled at signing time. -->
+	     and carries no app-groups entitlement. The shared keychain access group
+	     lets the sandboxed widget extension read the credentials it needs to
+	     refresh usage without opening the app. -->
+	<key>com.apple.security.keychain-access-groups</key>
+	<array>
+		<string>Y3DAXDSX2F.com.juanlatorre.agent-usage</string>
+	</array>
 </dict>
 </plist>

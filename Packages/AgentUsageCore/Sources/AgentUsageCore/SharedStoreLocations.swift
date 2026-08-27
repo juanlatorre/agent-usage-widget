@@ -24,13 +24,24 @@ public enum SharedStoreLocations {
     }
 
     /// The widget extension's own sandbox container — the one location a
-    /// sandboxed widget can always read. The unsandboxed main app mirrors
-    /// shared state here by direct path (no provisioning profile needed).
+    /// sandboxed widget can always read. Process-aware:
+    /// - Inside the widget process, `homeDirectoryForCurrentUser` IS its
+    ///   container (`…/Data`), so its own Application Support is the answer.
+    /// - The unsandboxed main app reaches the same directory by direct path
+    ///   and mirrors shared state there (no provisioning profile needed).
     public static let widgetBundleID = "com.juanlatorre.AgentUsage.widget"
 
     public static func widgetContainerDirectory() -> URL? {
         let fm = FileManager.default
-        let dir = fm.homeDirectoryForCurrentUser
+        let home = fm.homeDirectoryForCurrentUser
+        if home.path.contains("/Library/Containers/") {
+            // We ARE the sandboxed widget: our own App Support is the container.
+            guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+                return nil
+            }
+            return appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true)
+        }
+        let dir = home
             .appendingPathComponent("Library/Containers", isDirectory: true)
             .appendingPathComponent(widgetBundleID, isDirectory: true)
             .appendingPathComponent("Data/Library/Application Support/AgentUsageWidget", isDirectory: true)

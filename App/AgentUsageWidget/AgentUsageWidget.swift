@@ -5,6 +5,27 @@ import AgentUsageCore
 
 // MARK: - App Intents
 
+/// Refreshes usage WITHOUT opening the app: runs entirely inside the widget
+/// extension using shared-keychain credentials (see WidgetRefresher). If the
+/// in-process fetch yields nothing — e.g. credentials not yet migrated into
+/// the shared group — it falls back to opening the app, which always can.
+struct RefreshWidgetIntent: AppIntent {
+    static var title: LocalizedStringResource = "Refresh Now"
+    static var description = IntentDescription("Fetch fresh usage for your accounts.")
+    static var openAppWhenRun: Bool = false
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        let refreshed = await WidgetRefresher.refreshStaleSlots(olderThan: 0)
+        WidgetCenter.shared.reloadAllTimelines()
+        if refreshed.isEmpty {
+            // Best-effort fallback: NSWorkspace open from the extension.
+            _ = NSWorkspace.shared.open(URL(string: "agent-usage://refresh")!)
+        }
+        return .result()
+    }
+}
+
 struct SelectAccountIntent: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "Select account"
     static var description = IntentDescription("Choose one account to show in this widget.")
@@ -178,7 +199,10 @@ struct SmallProvider: AppIntentTimelineProvider {
         makeEntry(configured: configuration.account.map { [$0.slotID] } ?? [], family: .small)
     }
     func timeline(for configuration: SelectAccountIntent, in context: Context) async -> Timeline<AgentUsageEntry> {
-        makeTimeline(configured: configuration.account.map { [$0.slotID] } ?? [], family: .small)
+        // Self-heal: fetch stale slots in-process so widgets stay fresh even
+        // when the app hasn't run for a while (shared-keychain credentials).
+        _ = await WidgetRefresher.refreshStaleSlots(olderThan: 10 * 60)
+        return makeTimeline(configured: configuration.account.map { [$0.slotID] } ?? [], family: .small)
     }
     private func makeEntry(configured: [AccountSlotID], family: AgentUsageCore.WidgetFamily?) -> AgentUsageEntry {
         let now = Date()
@@ -234,7 +258,8 @@ struct MediumProvider: AppIntentTimelineProvider {
         makeEntry(configured: configuration.selectedIDs, family: .medium)
     }
     func timeline(for configuration: SelectAccountsIntent, in context: Context) async -> Timeline<AgentUsageEntry> {
-        makeTimeline(configured: configuration.selectedIDs, family: .medium)
+        _ = await WidgetRefresher.refreshStaleSlots(olderThan: 10 * 60)
+        return makeTimeline(configured: configuration.selectedIDs, family: .medium)
     }
     private func makeEntry(configured: [AccountSlotID], family: AgentUsageCore.WidgetFamily?) -> AgentUsageEntry {
         let now = Date()
@@ -296,7 +321,9 @@ struct LargeProvider: TimelineProvider {
                                    displayMode: prefs.displayMode, configuredSlotIDs: [], family: .large, isUnconfigured: false))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<AgentUsageEntry>) -> Void) {
-        let now = Date()
+        Task { @MainActor in
+            _ = await WidgetRefresher.refreshStaleSlots(olderThan: 10 * 60)
+            let now = Date()
         let snaps = WidgetStore.loadSnapshots()
         let prefs = WidgetStore.loadPreferences()
         let connected = WidgetStore.loadConnectedSlotIDs()
@@ -306,7 +333,8 @@ struct LargeProvider: TimelineProvider {
         let next = now.addingTimeInterval(5 * 60)
         let nextEntry = AgentUsageEntry(date: next, presentations: base.presentations, displayMode: base.displayMode,
                                         configuredSlotIDs: [], family: .large, isUnconfigured: false)
-        completion(Timeline(entries: [base, nextEntry], policy: .after(next)))
+            completion(Timeline(entries: [base, nextEntry], policy: .after(next)))
+        }
     }
 }
 

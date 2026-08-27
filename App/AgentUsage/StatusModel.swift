@@ -194,6 +194,25 @@ final class StatusModel {
         enableBackgroundRefreshByDefault()
     }
 
+    /// Eagerly touch every connected slot's credential so pre-group items
+    /// migrate into the shared keychain access group on first launch after
+    /// the update. The widget depends on the grouped items existing.
+    func migrateKeychainToSharedGroup(keychain: KeychainStore) {
+        var migrated = 0
+        for slot in slots where slot.isConnected {
+            let had: Bool
+            switch slot.slotID {
+            case .claude: had = keychain.credentials(account: .claude) != nil
+            case .chatGPT: had = keychain.credentials(account: .chatGPT) != nil
+            case .openCodeGO: had = keychain.openCodeCredentials(account: .openCodeGO) != nil
+            case .commandCodeGOAT: had = keychain.commandCodeCredentials(account: .commandCodeGOAT) != nil
+            case .zaiCodingPlan: had = keychain.zaiCredentials(account: .zaiCodingPlan) != nil
+            }
+            if had { migrated += 1 }
+        }
+        NSLog("[AgentUsage] keychain shared-group migration: %d slots verified", migrated)
+    }
+
     func refreshAllNow() async {
         guard let refreshService else { return }
         await refreshService.triggerGlobal(trigger: .manualGlobal)

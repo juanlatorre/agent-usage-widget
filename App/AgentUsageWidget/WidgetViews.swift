@@ -271,16 +271,15 @@ private struct WidgetHeader: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
-            // Link (not Button(intent:)) — openAppWhenRun does not reliably
-            // launch apps from macOS widget intents, so the intent path left
-            // the button doing nothing. A URL link both opens (or focuses)
-            // the app and triggers the forced refresh path, exactly like
-            // tapping the widget body.
-            Link(destination: URL(string: "agent-usage://refresh")!) {
+            // Button(intent:) runs in this extension process and fetches via
+            // the shared keychain group — no app launch needed. (A plain URL
+            // link was the previous stopgap; the in-process fetch is better UX.)
+            Button(intent: RefreshWidgetIntent()) {
                 Image(systemName: "arrow.clockwise")
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.secondary)
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("Refresh accounts")
         }
     }

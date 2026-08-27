@@ -31,9 +31,17 @@ public struct KeychainStore: Sendable, CredentialStoring {
 
     /// Base name combined with the slot ID to form unique per-slot services.
     public let serviceNamePrefix: String
+    /// Team-prefixed shared access group. When set (and the binary carries the
+    /// matching keychain-access-groups entitlement), items are written into
+    /// the group so the sandboxed widget extension can read them without a
+    /// prompt — the mechanism that lets widgets refresh usage themselves.
+    /// Nil keeps legacy ungrouped behavior (tests, CLIs).
+    public let sharedAccessGroup: String?
 
-    public init(serviceNamePrefix: String = "com.juanlatorre.agent-usage") {
+    public init(serviceNamePrefix: String = "com.juanlatorre.agent-usage",
+                sharedAccessGroup: String? = nil) {
         self.serviceNamePrefix = serviceNamePrefix
+        self.sharedAccessGroup = sharedAccessGroup
     }
 
     // MARK: - CredentialStoring conformance
@@ -76,26 +84,54 @@ public struct KeychainStore: Sendable, CredentialStoring {
 
     /// Load the stored secret payload for one slot, or nil when absent.
     /// For the renamed slot chatGPT, also probes legacy gpt-personal.
+    /// Legacy ungrouped items are migrated into the shared group in place.
     public func secret(account: AccountSlotID) -> Data? {
-        var query = baseQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecSuccess { return result as? Data }
+        if let data = copySecret(account: account) { return data }
         // One-time migration: chatGPT was gpt-personal
         if account == .chatGPT {
-            var legacy = baseQuery(account: .init(rawValue: "gpt-personal")!)
-            legacy[kSecReturnData as String] = true
-            legacy[kSecMatchLimit as String] = kSecMatchLimitOne
-            let ls = SecItemCopyMatching(legacy as CFDictionary, &result)
-            if ls == errSecSuccess, let data = result as? Data {
+            if let data = copySecret(account: .init(rawValue: "gpt-personal")!) {
                 // Best-effort migrate to new service; ignore failure
                 try? setSecret(data, account: .chatGPT)
                 return data
             }
         }
         return nil
+    }
+
+    /// Copy with the current grouping; when a group is configured, falls back
+    /// to the legacy ungrouped item once and migrates it into the group.
+    private func copySecret(account: AccountSlotID) -> Data? {
+        var query = baseQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecSuccess { return result as? Data }
+        guard sharedAccessGroup != nil, status == errSecItemNotFound,
+              let data = legacyCopy(account: account) else { return nil }
+        // Migrate: write the grouped copy, then remove the legacy twin.
+        do {
+            try setSecret(data, account: account)
+            deleteLegacySecret(account: account)
+        } catch {
+            NSLog("[AgentUsageCore] grouped migration failed for %@: %@", account.rawValue, String(describing: error))
+        }
+        return data
+    }
+
+    /// Copy ignoring the shared group (pre-migration items).
+    private func legacyCopy(account: AccountSlotID) -> Data? {
+        var query = ungroupedQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        return status == errSecSuccess ? result as? Data : nil
+    }
+
+    /// Remove the pre-migration ungrouped twin of a slot's item.
+    private func deleteLegacySecret(account: AccountSlotID) {
+        _ = SecItemDelete(ungroupedQuery(account: account) as CFDictionary)
     }
 
     /// Remove only this slot's entry. Deleting a missing item succeeds.
@@ -125,6 +161,18 @@ public struct KeychainStore: Sendable, CredentialStoring {
     // MARK: - Plumbing
 
     private func baseQuery(account: AccountSlotID) -> [String: Any] {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "\(serviceNamePrefix).\(account.rawValue)",
+            kSecAttrAccount as String: "oauth-credentials"
+        ]
+        if let sharedAccessGroup {
+            query[kSecAttrAccessGroup as String] = sharedAccessGroup
+        }
+        return query
+    }
+
+    private func ungroupedQuery(account: AccountSlotID) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "\(serviceNamePrefix).\(account.rawValue)",

@@ -87,7 +87,8 @@ struct AgentUsageApp: App {
                 ?? SnapshotStore.defaultBaseURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
             preferencesFile = sharedGroup.map { $0.appendingPathComponent("preferences.json", isDirectory: false) }
                 ?? PreferencesStore.defaultFileURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
-            let keychain = KeychainStore(serviceNamePrefix: "com.juanlatorre.agent-usage")
+            let keychain = KeychainStore(serviceNamePrefix: "com.juanlatorre.agent-usage",
+                                          sharedAccessGroup: WidgetRefresher.sharedKeychainGroup)
             let connectionsFile = sharedGroup.map { $0.appendingPathComponent("claude-connections.json", isDirectory: false) }
                 ?? ClaudeAccountController.defaultFileURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
             if let connectionsFile {
@@ -215,6 +216,15 @@ struct AgentUsageApp: App {
             // explicit opt-out remembered in UserDefaults.
             model.loginItemController = SMLoginItemController()
             model.enableBackgroundRefreshByDefault()
+            // Migrate keychain items into the shared access group so the widget
+            // extension can read credentials and refresh usage on its own.
+            model.migrateKeychainToSharedGroup(keychain: KeychainStore(
+                serviceNamePrefix: "com.juanlatorre.agent-usage",
+                sharedAccessGroup: WidgetRefresher.sharedKeychainGroup))
+            // Re-mirror connection records into the widget's container so its
+            // self-heal sees every connected slot (files written before the
+            // mirror existed were never copied).
+            Self.remirrorConnectionsToWidgetContainer()
         }
         return model
     }()
@@ -274,6 +284,23 @@ private extension AgentUsageApp {
 
         if let profile = fixtureProfile(named: "fixture-claude", token: "uitest-h", uuid: "uuid-h") {
             try? manager.connect(slotID: .claude, directory: profile)
+        }
+    }
+
+    /// Copy the canonical connection records into the widget extension's
+    /// container so its in-widget refresh sees every connected slot even for
+    /// files last written before the mirroring code existed.
+    static func remirrorConnectionsToWidgetContainer() {
+        let fm = FileManager.default
+        guard let appSupport = SharedStoreLocations.appSupportDirectory(),
+              let widgetContainer = SharedStoreLocations.widgetContainerDirectory() else { return }
+        for name in ["claude-connections.json", "codex-connections.json", "opencode-connections.json",
+                     "commandcode-connections.json", "zai-connections.json", "connections.json"] {
+            let src = appSupport.appendingPathComponent(name)
+            let dst = widgetContainer.appendingPathComponent(name)
+            if fm.fileExists(atPath: src.path), !fm.fileExists(atPath: dst.path) {
+                try? fm.copyItem(at: src, to: dst)
+            }
         }
     }
 
