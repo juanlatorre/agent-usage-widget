@@ -199,6 +199,12 @@ final class StatusModel {
         await refreshService.triggerGlobal(trigger: .manualGlobal)
     }
 
+    /// URL-triggered refresh (agent-usage://refresh from the widget's Link):
+    /// detached so the SwiftUI URL handler can't be cancelled mid-fetch.
+    func refreshAllNowDetached() {
+        Task { await refreshAllNow() }
+    }
+
     func refreshVisibleSlots(_ slotIDs: [AccountSlotID]) async {
         guard let refreshService else { return }
         await refreshService.triggerSlots(slotIDs, trigger: .widget)

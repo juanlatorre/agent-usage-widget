@@ -28,52 +28,6 @@ struct SelectAccountsIntent: AppIntent, WidgetConfigurationIntent {
     var selectedIDs: [AccountSlotID] { [account1, account2, account3].compactMap { $0?.slotID } }
 }
 
-struct RefreshWidgetIntent: AppIntent {
-    static var title: LocalizedStringResource = "Refresh Now"
-    static var description = IntentDescription("Refresh the selected accounts.")
-    /// The widget extension cannot read the login Keychain (partitioned by
-    /// Team), so it cannot fetch itself. Opening the app lets the real
-    /// fetcher run and consume the request immediately.
-    static var openAppWhenRun: Bool = true
-    @Parameter(title: "Account IDs") var accountIDs: [String]?
-    init(accountIDs: [String]? = nil) { self.accountIDs = accountIDs }
-    init() {}
-    func perform() async throws -> some IntentResult {
-        if let ids = accountIDs, !ids.isEmpty {
-            let fm = FileManager.default
-            // Candidate locations ordered by writability from this sandboxed
-            // extension: our OWN container App Support always works; the group
-            // containers only work when blessed (Developer ID without a
-            // provisioning profile gets EPERM there — observed live).
-            var bases: [URL] = []
-            if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-                bases.append(appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true))
-            }
-            for groupID in [SharedStoreLocations.canonicalAppGroupID] {
-                if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID) {
-                    bases.append(container)
-                } else {
-                    let direct = fm.homeDirectoryForCurrentUser
-                        .appendingPathComponent("Library/Group Containers", isDirectory: true)
-                        .appendingPathComponent(groupID, isDirectory: true)
-                    if fm.fileExists(atPath: direct.path) { bases.append(direct) }
-                }
-            }
-            let payload: [String: Any] = ["slotIDs": ids, "requestedAt": ISO8601DateFormatter().string(from: Date())]
-            if let data = try? JSONSerialization.data(withJSONObject: payload) {
-                for base in bases {
-                    try? fm.createDirectory(at: base, withIntermediateDirectories: true)
-                    try? data.write(to: base.appendingPathComponent("widget-refresh-request.json"), options: .atomic)
-                }
-            }
-            // Instant feedback: re-render from the snapshots already on disk
-            // while the app (opened by this intent) fetches fresh data.
-            WidgetCenter.shared.reloadAllTimelines()
-        }
-        return .result()
-    }
-}
-
 // MARK: - AccountEntity
 
 struct AccountEntity: AppEntity, Identifiable {

@@ -68,6 +68,15 @@ struct RootView: View {
                 if !hasMain { openWindow(id: "main") }
             }
         }
+        .onOpenURL { url in
+            // agent-usage://refresh — the widget's refresh control (a Link,
+            // since macOS widget intents cannot reliably open the app).
+            // Forces a manualGlobal refresh: bypasses non-rate-limit gates so
+            // the user always sees fresh data after tapping it.
+            if url.host == "refresh" {
+                model.refreshAllNowDetached()
+            }
+        }
     }
 }
 
