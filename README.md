@@ -29,7 +29,8 @@ with Desktop widgets that stay fresh on their own.
 
 - **All your AI subscriptions, one glance** — Claude, ChatGPT, OpenCode · GO, Command Code · GOAT and Z.ai · Coding Plan, side by side.
 - **Three Desktop widgets** — Small (one account), Medium (up to three), Large (all your accounts) with usage bars, reset countdowns (`5d 3h`, `2h 41m`) and one-tap refresh.
-- **Honest states, always** — Available / Blocked / rate-limited / stale data are derived from real snapshots. No fabricated 0%, no fake freshness: if data can't be verified, it says so.
+- **Always fresh, even when you're not looking** — closing the window doesn't quit the app, and it registers itself as a login item by default (opt out any time), so widgets stay inside the freshness horizon across reboots.
+- **Honest states, always** — Available / Blocked / rate-limited / stale data are derived from real snapshots. No fabricated 0%, no fake freshness: stale data shows dimmed bars with its age instead of pretending to be current.
 - **Auto-refresh that respects providers** — honors server `Retry-After` verbatim, backs off across relaunches, recovers on its own when a rate-limit window expires.
 - **Keychain-native credentials** — API keys live in the macOS Keychain, never in plain files. Claude and Codex can reuse the CLI's own login.
 - **Zero telemetry** — no analytics, no servers of ours. Usage numbers come straight from each provider's official endpoints to your Mac.
