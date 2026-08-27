@@ -107,14 +107,25 @@ private struct UsageBar: View {
 }
 
 /// Countdown to a reset, monospaced, right-aligned, stable width.
+/// Upper bound is the reset date: after it passes the timer clamps instead
+/// of counting toward a distant bound (the old `resetAt...distantFuture`
+/// range rendered "17306572:01:48" — hours until year 4001 — once a cached
+/// entry outlived its reset).
 private struct ResetCountdown: View {
     let resetAt: Date
     var tint: Color = .secondary
     var body: some View {
         if resetAt > Date() {
-            Text(timerInterval: resetAt...Date.distantFuture, countsDown: true)
+            Text(timerInterval: Date()...resetAt, countsDown: true)
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(tint)
+                .frame(minWidth: 32, alignment: .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        } else {
+            Text("reset…")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.tertiary)
                 .frame(minWidth: 32, alignment: .trailing)
                 .lineLimit(1)
         }
@@ -144,7 +155,7 @@ private struct AccountRow: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(p.label), not connected")
         } else {
-            VStack(alignment: .leading, spacing: large ? 4 : 3) {
+            VStack(alignment: .leading, spacing: large ? 5 : 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     StatusDot(status: p.status)
                         .frame(width: large ? 7 : 6, height: large ? 7 : 6)
@@ -221,7 +232,7 @@ struct SmallView: View {
                 .widgetURL(URL(string: "agent-usage://open"))
         } else {
             let p = entry.presentations[0]
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
                     StatusDot(status: p.status)
                     Text(shortLabel(p.label)).font(.footnote.weight(.semibold)).lineLimit(1)
@@ -282,19 +293,19 @@ struct MediumView: View {
                 .widgetURL(URL(string: "agent-usage://open"))
         } else {
             let ordered = WidgetOrdering.sorted(entry.presentations)
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 WidgetHeader(
                     title: "Agent Usage",
                     updated: entry.date,
                     accountIDs: ordered.map { $0.slotID.rawValue })
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 12) {
                     ForEach(ordered) { p in
                         AccountRow(p: p, displayMode: entry.displayMode)
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(12)
+            .padding(14)
             .widgetURL(URL(string: "agent-usage://open"))
         }
     }
@@ -310,19 +321,19 @@ struct LargeView: View {
             ContentUnavailableView("Agent Usage", systemImage: "rectangle.dashed", description: Text("Connect accounts in the app."))
                 .widgetURL(URL(string: "agent-usage://open"))
         } else {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 12) {
                 WidgetHeader(
                     title: "Agent Usage",
                     updated: entry.date,
                     accountIDs: ordered.map { $0.slotID.rawValue })
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 11) {
                     ForEach(ordered) { p in
                         AccountRow(p: p, displayMode: entry.displayMode, large: true)
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(14)
+            .padding(16)
             .widgetURL(URL(string: "agent-usage://open"))
         }
     }
