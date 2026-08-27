@@ -383,7 +383,7 @@ struct LargeWidget: Widget {
             LargeView(entry: entry).containerBackground(for: .widget) { Color.clear }
         }
         .configurationDisplayName("Agent Usage")
-        .description("All six accounts.")
+        .description("All your accounts.")
         .supportedFamilies([.systemLarge])
         .contentMarginsDisabled()
     }
