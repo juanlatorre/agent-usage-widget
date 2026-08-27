@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 import AgentUsageCore
 
 /// App-side model that owns catalog state, persisted snapshots, and preferences,
@@ -211,6 +212,11 @@ final class StatusModel {
     private func consumeWidgetRefreshRequest() {
         let fm = FileManager.default
         var candidates: [URL] = []
+        // The widget's own container — the one place its sandboxed RefreshWidgetIntent
+        // can reliably write (group containers are EPERM for it under Developer ID).
+        if let widgetContainer = SharedStoreLocations.widgetContainerDirectory() {
+            candidates.append(widgetContainer.appendingPathComponent("widget-refresh-request.json"))
+        }
         for groupID in [SharedStoreLocations.canonicalAppGroupID] {
             if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID) {
                 candidates.append(container.appendingPathComponent("widget-refresh-request.json"))
@@ -396,6 +402,10 @@ final class StatusModel {
             try snapshotStore?.save(snapshot)
             snapshots[snapshot.slotID] = snapshot
             refreshDerivedState()
+            // Widgets render from persisted snapshots; without this they keep
+            // showing the previous timeline entry for minutes after new data
+            // landed ("the refresh button does nothing" — observed live).
+            WidgetCenter.shared.reloadAllTimelines()
         } catch {
             NSLog("[AgentUsage] snapshot save failed: \(error)")
         }

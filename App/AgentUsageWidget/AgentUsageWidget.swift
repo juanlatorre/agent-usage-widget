@@ -41,9 +41,14 @@ struct RefreshWidgetIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         if let ids = accountIDs, !ids.isEmpty {
             let fm = FileManager.default
-            // Canonical Team-prefixed group first (the one the app reads);
-            // legacy group as fallback for older installs.
+            // Candidate locations ordered by writability from this sandboxed
+            // extension: our OWN container App Support always works; the group
+            // containers only work when blessed (Developer ID without a
+            // provisioning profile gets EPERM there — observed live).
             var bases: [URL] = []
+            if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                bases.append(appSupport.appendingPathComponent("AgentUsageWidget", isDirectory: true))
+            }
             for groupID in [SharedStoreLocations.canonicalAppGroupID] {
                 if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID) {
                     bases.append(container)
@@ -61,6 +66,9 @@ struct RefreshWidgetIntent: AppIntent {
                     try? data.write(to: base.appendingPathComponent("widget-refresh-request.json"), options: .atomic)
                 }
             }
+            // Instant feedback: re-render from the snapshots already on disk
+            // while the app (opened by this intent) fetches fresh data.
+            WidgetCenter.shared.reloadAllTimelines()
         }
         return .result()
     }
