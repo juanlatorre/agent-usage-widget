@@ -216,10 +216,36 @@ struct AgentUsageApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Closing the window must NOT quit the app: the refresh pipeline keeps
+    /// widget snapshots fresh, and without it every slot degrades to
+    /// Unavailable once the 15-minute honesty horizon passes. Quit explicitly
+    /// via ⌘Q or Dock → Quit.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        false
     }
+
+    /// Dock icon click with no visible window reopens the main window —
+    /// exactly once: the handler checks for a visible window before opening
+    /// (WindowGroup would otherwise stack duplicates).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            MainActor.assumeIsolated {
+                let hasMain = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
+                if !hasMain {
+                    Self.reopenHandler?()
+                }
+            }
+        }
+        return true
+    }
+
+    /// Retained openWindow action set by RootView.onAppear; survives window close.
+    /// MainActor-isolated: set from the main scene, read from the (main-actor)
+    /// AppKit reopen callback.
+    @MainActor static var reopenHandler: (() -> Void)?
+    @MainActor static var lastReopenAt: Date?
 }
+
 
 private extension AgentUsageApp {
 

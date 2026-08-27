@@ -25,6 +25,7 @@ struct RootView: View {
 
     @State private var selection: AccountSlotID? = .claude
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         NavigationSplitView {
@@ -55,6 +56,17 @@ struct RootView: View {
         .task { await model.handleAppActivationDetached() }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active { Task { await model.handleAppActivationDetached() } }
+        }
+        .onAppear {
+            AppDelegate.reopenHandler = {
+                // Debounce: openWindow is async — two rapid reopens (before the
+                // first window becomes visible) would stack duplicates.
+                let now = Date()
+                if let last = AppDelegate.lastReopenAt, now.timeIntervalSince(last) < 1.5 { return }
+                AppDelegate.lastReopenAt = now
+                let hasMain = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
+                if !hasMain { openWindow(id: "main") }
+            }
         }
     }
 }

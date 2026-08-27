@@ -8,11 +8,25 @@ private func statusColor(_ status: AccountStatus) -> Color {
     switch status {
     case .available: return .green
     case .blocked: return .orange
-    case .error, .unavailable: return .red
+    case .error: return .red
+    // Stale/unknown is neutral, not an alarm — history is shown dimmed with
+    // its age instead of a wall of red.
+    case .unavailable: return .gray
     case .authenticationRequired: return .purple
     case .loading: return .blue
     case .notConnected: return .gray
     }
+}
+
+/// Compact age of a snapshot: "42s", "12m", "8h", "5d".
+private func agoText(_ seconds: TimeInterval) -> String {
+    let s = max(seconds, 0)
+    if s < 60 { return "\(Int(s))s" }
+    let m = Int(s) / 60
+    if m < 60 { return "\(m)m" }
+    let h = m / 60
+    if h < 24 { return "\(h)h" }
+    return "\(h / 24)d"
 }
 
 private func statusCaption(_ status: AccountStatus) -> String {
@@ -68,13 +82,14 @@ private struct StatusDot: View {
 private struct PercentText: View {
     let fraction: Double
     var large: Bool = false
+    var dimmed: Bool = false
     var tint: Color = .primary
     var body: some View {
         Text("\(Int((fraction * 100).rounded()))%")
             .font(large
                   ? .system(.body, design: .rounded).monospacedDigit().weight(.semibold)
                   : .system(.callout, design: .rounded).monospacedDigit().weight(.semibold))
-            .foregroundStyle(tint)
+            .foregroundStyle(dimmed ? AnyShapeStyle(.tertiary) : AnyShapeStyle(tint))
             .lineLimit(1)
             .minimumScaleFactor(0.6)
     }
@@ -85,6 +100,7 @@ private struct UsageBar: View {
     let fraction: Double
     let status: AccountStatus
     var height: CGFloat = 5
+    var dimmed: Bool = false
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
@@ -95,6 +111,7 @@ private struct UsageBar: View {
             }
         }
         .frame(height: height)
+        .opacity(dimmed ? 0.45 : 1)
     }
     private var barColor: Color {
         switch status {
@@ -168,6 +185,7 @@ private struct AccountRow: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(p.label), not connected")
         } else {
+            let degraded = (p.status == .error || p.status == .unavailable) && !p.historicalWindows.isEmpty
             VStack(alignment: .leading, spacing: large ? 5 : 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     StatusDot(status: p.status)
@@ -176,6 +194,10 @@ private struct AccountRow: View {
                         .font(large ? .subheadline.weight(.medium) : .footnote.weight(.medium))
                         .lineLimit(1)
                     if let kind = p.limitingWindow?.kind {
+                        Text(shortWindowName(kind))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    } else if degraded, let kind = p.historicalWindows.first?.id {
                         Text(shortWindowName(kind))
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(.tertiary)
@@ -191,6 +213,16 @@ private struct AccountRow: View {
                             fraction: limiting.fraction(for: displayMode),
                             large: large,
                             tint: p.status == .blocked ? .orange : .primary)
+                    } else if degraded, let hist = p.historicalWindows.first {
+                        // Stale history: clearly-labeled context, never current truth.
+                        Text("\(agoText(p.snapshotAge)) ago")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                        PercentText(
+                            fraction: displayMode == .used ? hist.clampedUsedFraction : 1 - hist.clampedUsedFraction,
+                            large: large,
+                            dimmed: true)
                     } else {
                         Text(statusCaption(p.status)).font(.caption2).foregroundStyle(.secondary)
                     }
@@ -200,6 +232,12 @@ private struct AccountRow: View {
                         fraction: limiting.fraction(for: displayMode),
                         status: p.status,
                         height: large ? 6 : 5)
+                } else if degraded, let hist = p.historicalWindows.first {
+                    UsageBar(
+                        fraction: displayMode == .used ? hist.clampedUsedFraction : 1 - hist.clampedUsedFraction,
+                        status: p.status,
+                        height: large ? 6 : 5,
+                        dimmed: true)
                 } else {
                     Text(statusCaption(p.status)).font(.caption2).foregroundStyle(.secondary)
                 }
@@ -215,15 +253,24 @@ private struct AccountRow: View {
 private struct WidgetHeader: View {
     let title: String
     let updated: Date
+    /// Freshest snapshot age across shown slots — the honest "Updated" stamp.
+    var freshestSnapshotAge: TimeInterval?
     let accountIDs: [String]
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(title).font(.footnote.weight(.semibold))
             Spacer(minLength: 6)
-            Text("Updated \(updated, style: .relative) ago")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
+            if let age = freshestSnapshotAge, age > 0 {
+                Text("Updated \(agoText(age)) ago")
+                    .font(.caption2)
+                    .foregroundStyle(age > 15 * 60 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(HierarchicalShapeStyle.tertiary))
+                    .lineLimit(1)
+            } else {
+                Text("Updated \(updated, style: .relative) ago")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
             Button(intent: RefreshWidgetIntent(accountIDs: accountIDs)) {
                 Image(systemName: "arrow.clockwise")
                     .font(.footnote.weight(.medium))
@@ -284,7 +331,9 @@ struct SmallView: View {
                         ResetCountdown(resetAt: limiting.resetAt, tint: p.status == .blocked ? .orange : .secondary)
                     }
                 } else {
-                    Text(p.status == .authenticationRequired ? "Reconnect in the app." : "Waiting for data…")
+                    Text(p.status == .authenticationRequired
+                         ? "Reconnect in the app."
+                         : "Updated \(agoText(p.snapshotAge)) ago — open app to refresh")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
@@ -310,6 +359,7 @@ struct MediumView: View {
                 WidgetHeader(
                     title: "Agent Usage",
                     updated: entry.date,
+                    freshestSnapshotAge: ordered.map(\.snapshotAge).filter { $0 > 0 }.min(),
                     accountIDs: ordered.map { $0.slotID.rawValue })
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(ordered) { p in
@@ -338,6 +388,7 @@ struct LargeView: View {
                 WidgetHeader(
                     title: "Agent Usage",
                     updated: entry.date,
+                    freshestSnapshotAge: ordered.map(\.snapshotAge).filter { $0 > 0 }.min(),
                     accountIDs: ordered.map { $0.slotID.rawValue })
                 VStack(alignment: .leading, spacing: 11) {
                     ForEach(ordered) { p in

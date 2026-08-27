@@ -64,9 +64,9 @@ private extension SettingsView {
     var loginStatusCaption: String {
         if model.connectedSlots.isEmpty { return "Connect an account to enable background refresh." }
         switch loginItemStatus {
-        case .enabled: return "Background refresh will run at login. No menu-bar item is shown."
-        case .disabled: return "Background refresh is off. You can still refresh manually."
-        case .requiresApproval: return "Background item requires approval in System Settings → Login Items."
+        case .enabled: return "Starts at login and keeps widgets fresh even with the window closed. Closing the window never quits — use ⌘Q to quit."
+        case .disabled: return "Off. The app still refreshes while running — closing its window keeps widgets fresh."
+        case .requiresApproval: return "Needs approval in System Settings → General → Login Items."
         case .notSupported: return "Background refresh is not available on this system."
         case .unknown(let s): return s
         }

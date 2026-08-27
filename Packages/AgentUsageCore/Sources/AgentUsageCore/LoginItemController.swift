@@ -26,9 +26,13 @@ public struct SMLoginItemController: LoginItemControlling, @unchecked Sendable {
 
     private let service: SMAppService?
 
-    public init(bundleIdentifier: String = "com.juanlatorre.agent-usage.helper") {
+    /// Registers the MAIN app as the login item. The planned standalone helper
+    /// binary was never shipped; the unsandboxed app itself runs the refresh
+    /// pipeline (30s recovery timer) with its window closed, which keeps widget
+    /// snapshots inside the 15-minute freshness horizon.
+    public init(bundleIdentifier: String = "com.juanlatorre.AgentUsage") {
         if #available(macOS 13.0, *) {
-            self.service = SMAppService.loginItem(identifier: bundleIdentifier)
+            self.service = SMAppService.mainApp
         } else {
             self.service = nil
         }
