@@ -46,6 +46,19 @@ public enum RefreshTrigger: Sendable, Equatable {
         }
     }
 
+    /// Whether the trigger respects the target refresh interval (nextDueAt).
+    /// Interval and reset-boundary ticks are purely time-driven; activation and
+    /// widget reloads are frequent and involuntary, so they must not bypass the
+    /// cadence — otherwise every widget tap or focus change re-fetches all
+    /// slots even when the data is seconds old, and any transient error then
+    /// poisons the UI (live incident). Explicit user refreshes still override.
+    public var respectsIntervalGate: Bool {
+        switch self {
+        case .interval, .resetBoundary, .appActivation, .widget: return true
+        default: return false
+        }
+    }
+
     public var isAutomatic: Bool {
         switch self {
         case .interval, .resetBoundary: return true

@@ -83,7 +83,7 @@ public final class RefreshScheduler: @unchecked Sendable {
             }
         }
         // Interval gating: don't refetch before nextDueAt for automatic triggers.
-        if trigger.isAutomatic, let due = st.nextDueAt, current < due, !trigger.isSafeManualOverride {
+        if trigger.respectsIntervalGate, let due = st.nextDueAt, current < due, !trigger.isSafeManualOverride {
             return false
         }
         return true
@@ -109,7 +109,7 @@ public final class RefreshScheduler: @unchecked Sendable {
                 return false
             }
         }
-        if trigger.isAutomatic, let due = st.nextDueAt, current < due, !trigger.isSafeManualOverride {
+        if trigger.respectsIntervalGate, let due = st.nextDueAt, current < due, !trigger.isSafeManualOverride {
             return false
         }
         st.inFlight = true

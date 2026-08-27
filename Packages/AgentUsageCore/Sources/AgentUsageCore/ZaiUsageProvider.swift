@@ -67,11 +67,15 @@ public struct ZaiUsageProvider: Sendable {
         for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
         do {
             return try await session.data(for: request)
-        } catch let error as URLError where error.code == .timedOut {
-            throw ZaiUsageError.transport("timeout")
-        } catch {
-            throw ZaiUsageError.transport(String(describing: error))
-        }
+        } catch let error as URLError where error.code == .cancelled {
+     throw ZaiUsageError.transport("cancelled")
+ } catch is CancellationError {
+     throw ZaiUsageError.transport("cancelled")
+ } catch let error as URLError where error.code == .timedOut {
+     throw ZaiUsageError.transport("timeout")
+ } catch {
+     throw ZaiUsageError.transport(String(describing: error))
+ }
     }
 
     private func validateHTTP(_ response: URLResponse) throws {

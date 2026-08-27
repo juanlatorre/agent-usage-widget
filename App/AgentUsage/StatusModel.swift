@@ -185,6 +185,13 @@ final class StatusModel {
         await refreshService.triggerSlots(slotIDs, trigger: .widget)
     }
 
+    /// Entry point for SwiftUI lifecycle hooks. Detached by design: the view's
+    /// `.task` is cancelled on re-render/navigation — the refresh work itself
+    /// must not be (see handleAppActivation()).
+    func handleAppActivationDetached() {
+        Task { await handleAppActivation() }
+    }
+
     /// App activation trigger (R9).
     func handleAppActivation() async {
         consumeWidgetRefreshRequest()

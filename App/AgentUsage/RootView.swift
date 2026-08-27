@@ -52,9 +52,9 @@ struct RootView: View {
         }
         .frame(minWidth: 720, minHeight: 520)
         .navigationTitle("Agent Usage")
-        .task { await model.handleAppActivation() }
+        .task { await model.handleAppActivationDetached() }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active { Task { await model.handleAppActivation() } }
+            if newPhase == .active { Task { await model.handleAppActivationDetached() } }
         }
     }
 }

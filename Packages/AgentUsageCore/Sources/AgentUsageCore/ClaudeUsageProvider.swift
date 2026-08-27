@@ -63,11 +63,15 @@ public struct ClaudeUsageProvider: Sendable {
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
-        } catch let error as URLError where error.code == .timedOut {
-            throw ClaudeUsageError.transport("timeout")
-        } catch {
-            throw ClaudeUsageError.transport(String(describing: error))
-        }
+        } catch let error as URLError where error.code == .cancelled {
+     throw ClaudeUsageError.transport("cancelled")
+ } catch is CancellationError {
+     throw ClaudeUsageError.transport("cancelled")
+ } catch let error as URLError where error.code == .timedOut {
+     throw ClaudeUsageError.transport("timeout")
+ } catch {
+     throw ClaudeUsageError.transport(String(describing: error))
+ }
 
         guard let http = response as? HTTPURLResponse else {
             throw ClaudeUsageError.transport("non-HTTP response")

@@ -74,11 +74,15 @@ public struct CodexUsageProvider: Sendable {
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
-        } catch let error as URLError where error.code == .timedOut {
-            throw CodexUsageError.transport("timeout")
-        } catch {
-            throw CodexUsageError.transport(String(describing: error))
-        }
+        } catch let error as URLError where error.code == .cancelled {
+     throw CodexUsageError.transport("cancelled")
+ } catch is CancellationError {
+     throw CodexUsageError.transport("cancelled")
+ } catch let error as URLError where error.code == .timedOut {
+     throw CodexUsageError.transport("timeout")
+ } catch {
+     throw CodexUsageError.transport(String(describing: error))
+ }
 
         guard let http = response as? HTTPURLResponse else {
             throw CodexUsageError.transport("non-HTTP response")

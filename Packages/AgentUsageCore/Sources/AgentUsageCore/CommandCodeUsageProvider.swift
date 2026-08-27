@@ -143,6 +143,10 @@ public struct CommandCodeUsageProvider: Sendable {
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         do {
             return try await session.data(for: request)
+        } catch let error as URLError where error.code == .cancelled {
+            throw CommandCodeUsageError.transport("cancelled")
+        } catch is CancellationError {
+            throw CommandCodeUsageError.transport("cancelled")
         } catch let error as URLError where error.code == .timedOut {
             throw CommandCodeUsageError.transport("timeout")
         } catch {
