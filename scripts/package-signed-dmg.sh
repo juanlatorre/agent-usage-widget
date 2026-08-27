@@ -28,7 +28,7 @@ Usage: scripts/package-signed-dmg.sh [--team TEAM_ID] [--identity "Developer ID 
   --no-archive       Reuse existing .xcarchive at .derived-validate/Archive/AgentUsage.xcarchive
 
 Requires a valid Developer ID Application cert for the team in the login keychain.
-To create it: Xcode → Settings → Accounts → Select the developer team team → Manage Certificates… → + → Developer ID Application
+To create it: Xcode → Settings → Accounts → Select the developer team → Manage Certificates… → + → Developer ID Application
 (or developer.apple.com → Certificates → + → Developer ID Application → upload CSR from Keychain Access → download .cer → double-click).
 USAGE
 }

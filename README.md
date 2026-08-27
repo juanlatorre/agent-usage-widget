@@ -48,7 +48,7 @@ with Desktop widgets that stay fresh on their own.
 
 1. Grab the latest **`AgentUsage-<version>-arm64.dmg`** from [Releases](https://github.com/juanlatorre/agent-usage-widget/releases/latest).
 2. Open it and drag **Agent Usage** to `Applications`.
-3. First launch: right-click the app → **Open** → **Open** (Developer ID signed; notarization pending).
+3. Double-click to launch — Developer ID signed and **notarized**, opens with no warnings.
 
 > Requires macOS 14+ on Apple Silicon.
 
