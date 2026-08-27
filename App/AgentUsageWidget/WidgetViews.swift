@@ -106,22 +106,35 @@ private struct UsageBar: View {
     }
 }
 
-/// Countdown to a reset, monospaced, right-aligned, stable width.
-/// Upper bound is the reset date: after it passes the timer clamps instead
-/// of counting toward a distant bound (the old `resetAt...distantFuture`
-/// range rendered "17306572:01:48" — hours until year 4001 — once a cached
-/// entry outlived its reset).
+/// Friendly compact duration until a date: "45s", "12m", "8h 14m", "5d 3h".
+/// Static by design: timeline entries reload every few minutes, and the
+/// system timerInterval format renders total hours beyond a day ("200:17:55")
+/// — hostile at weekly-reset scale, where minute precision is pointless.
+private func friendlyDuration(to date: Date, from now: Date = Date()) -> String {
+    let s = max(date.timeIntervalSince(now), 0)
+    if s < 60 { return "\(Int(s))s" }
+    let m = Int(s) / 60
+    if m < 60 { return "\(m)m" }
+    let h = m / 60
+    if h < 24 { return "\(h)h \(m % 60)m" }
+    let d = h / 24
+    if d < 7 { return "\(d)d \(h % 24)h" }
+    return "\(d)d"
+}
+
+/// Reset countdown, monospaced, right-aligned, stable width, friendly format.
 private struct ResetCountdown: View {
     let resetAt: Date
     var tint: Color = .secondary
     var body: some View {
         if resetAt > Date() {
-            Text(timerInterval: Date()...resetAt, countsDown: true)
+            Text(friendlyDuration(to: resetAt))
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(tint)
                 .frame(minWidth: 32, alignment: .trailing)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+                .help("Resets \(resetAt.formatted(date: .abbreviated, time: .shortened))")
         } else {
             Text("reset…")
                 .font(.caption2.monospacedDigit())
