@@ -157,23 +157,41 @@ final class StatusModel {
         Set(slots.filter(\.isConnected).map(\.slotID))
     }
 
+    private static let backgroundOptOutKey = "agentUsage.backgroundRefreshOptOut"
+
     var isBackgroundRefreshEnabled: Bool { refreshScheduler != nil ? (loginItemController?.isEnabled ?? false) : false }
 
     func loginItemStatus() -> LoginItemStatus { loginItemController?.status() ?? .notSupported }
 
     func setBackgroundRefreshEnabled(_ enabled: Bool) {
         guard !connectedSlots.isEmpty else { return }
+        // Remember explicit user intent so the default-on logic never fights it.
+        UserDefaults.standard.set(!enabled, forKey: Self.backgroundOptOutKey)
         do { try loginItemController?.setEnabled(enabled) } catch { NSLog("[AgentUsage] login item toggle failed: %@", String(describing: error)) }
+    }
+
+    /// Background refresh is ON by default: a usage monitor whose widgets go
+    /// stale because the login item was never registered is indistinguishable
+    /// from a broken app. Registers the main app via SMAppService unless the
+    /// user explicitly turned the toggle off. Called at launch and after the
+    /// first successful connection.
+    func enableBackgroundRefreshByDefault() {
+        guard let controller = loginItemController else { return }
+        guard !connectedSlots.isEmpty else { return }
+        if UserDefaults.standard.bool(forKey: Self.backgroundOptOutKey) { return }
+        switch controller.status() {
+        case .enabled, .requiresApproval:
+            break // already registered or awaiting approval in System Settings
+        default:
+            do { try controller.setEnabled(true) } catch {
+                NSLog("[AgentUsage] default background enable failed: %@", String(describing: error))
+            }
+        }
     }
 
     /// Called after first successful connection per R1 lazy registration.
     func ensureBackgroundRefreshAvailableAfterConnect() {
-        // Lazy helper registration is driven by first connection; Settings reflects it.
-        // If no helper bundle exists yet (dev builds), this is a no-op.
-        if connectedSlots.count == 1 { // first
-            // Offer to enable is via Settings; do not auto-enable without user consent.
-            // We still record that background refresh is available so the toggle appears.
-        }
+        enableBackgroundRefreshByDefault()
     }
 
     func refreshAllNow() async {

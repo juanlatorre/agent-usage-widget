@@ -210,6 +210,11 @@ struct AgentUsageApp: App {
             // rate-limited provider is not re-hit immediately on every relaunch.
             scheduler.hydrateFailures(failureStore.load())
             model.attachRefreshService(scheduler: scheduler, failureStore: failureStore, service: service)
+            // Real login-item support (previously nil — the toggle always read
+            // "not available"). Background refresh is on by default with an
+            // explicit opt-out remembered in UserDefaults.
+            model.loginItemController = SMLoginItemController()
+            model.enableBackgroundRefreshByDefault()
         }
         return model
     }()
