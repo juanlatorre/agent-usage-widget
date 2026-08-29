@@ -45,9 +45,8 @@ public enum CredentialMirror {
         let directory = url.deletingLastPathComponent()
         try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        // 0600: user-only, matching the keychain's practical secrecy.
-        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: directory.path)
-
+        // The container directory is created 0700 by createDirectory (default
+        // umask); credentials.json is written 0600 below.
         if let existing = try? Data(contentsOf: url), existing == data { return }
         do {
             try data.write(to: url, options: .atomic)
