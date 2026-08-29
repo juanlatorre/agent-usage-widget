@@ -6,11 +6,9 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<!-- Shared with the main app so the widget can read credentials and
-	     refresh usage itself, without opening the app. -->
-	<key>com.apple.security.keychain-access-groups</key>
-	<array>
-		<string>Y3DAXDSX2F.com.juanlatorre.agent-usage</string>
-	</array>
+	<!-- NO keychain access here: the extension reads credentials from the
+	     0600 mirror file in its own container (CredentialMirror). Touching
+	     the login Keychain from the extension surfaced the login-password
+	     prompt every few minutes. -->
 </dict>
 </plist>

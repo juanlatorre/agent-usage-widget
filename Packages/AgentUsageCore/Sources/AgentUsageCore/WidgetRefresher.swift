@@ -3,77 +3,48 @@ import Foundation
 /// In-widget usage refresh: fetches provider data directly from the widget
 /// extension process, without launching the app.
 ///
-/// This works because (a) the app mirrors connection records and snapshots
-/// into the widget extension's own container — the one location its sandbox
-/// always reads — and (b) both binaries share a Team-prefixed keychain access
-/// group, so the widget reads credentials from the login Keychain without a
-/// prompt. Snapshots fetched here are written where both the widget renders
-/// and the app reads (the app's SnapshotStore treats this container as a
-/// mirror with newest-wins semantics).
+/// Inputs (all inside the widget extension's own container — the one place
+/// its sandbox always reads):
+/// - connection records, mirrored by the app;
+/// - `credentials.json`, a 0600 mirror of the current credentials (the
+///   sandboxed extension cannot read the login Keychain — attempting it
+///   surfaced the login-password prompt every few minutes — so the app
+///   mirrors tokens to this file instead).
 ///
-/// A small persisted retry map honors provider rate limits across timeline
-/// reloads so self-healing never hammers a 429'd endpoint.
+/// Outputs: refreshed snapshots, plus a persisted retry map honoring provider
+/// rate limits across timeline reloads.
 @MainActor
 public enum WidgetRefresher {
 
-    /// The shared access group both binaries carry in their entitlements.
     public static let sharedKeychainGroup = "Y3DAXDSX2F.com.juanlatorre.agent-usage"
 
     /// Refresh connected slots whose stored snapshots are older than `maxAge`.
-    /// Returns the slot IDs that produced a fresh snapshot. Failures are
-    /// recorded in the retry map (rate-limited slots wait out their window).
-    ///
-    /// WidgetKit kills extensions that exceed a few seconds of work, so all
-    /// due slots fetch CONCURRENTLY through a short-timeout session and the
-    /// retry map is persisted before returning.
+    /// Concurrent by design: WidgetKit kills extensions exceeding a few
+    /// seconds of work (sequential 30s fetches got the process killed
+    /// mid-run). Returns the slot IDs that produced a fresh snapshot.
     public static func refreshStaleSlots(olderThan maxAge: TimeInterval) async -> [AccountSlotID] {
         guard let base = SharedStoreLocations.widgetContainerDirectory() else { return [] }
-        let keychain = KeychainStore(serviceNamePrefix: "com.juanlatorre.agent-usage",
-                                      sharedAccessGroup: sharedKeychainGroup)
         let store = SnapshotStore(baseURL: base.appendingPathComponent("snapshots", isDirectory: true))
         var retryMap = loadRetryMap(base: base)
         let now = Date()
 
-        // Short timeouts: the extension's execution budget is seconds, not the
-        // providers' default 30s-per-request.
+        guard let mirrored = try? CredentialMirror.load(container: base) else {
+            NSLog("[AgentUsageWidget] self-heal: no credential mirror yet")
+            return []
+        }
+
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 12
         config.timeoutIntervalForResource = 15
         let session = URLSession(configuration: config)
 
-        let claude = ClaudeConnectionManager(
-            controller: ClaudeAccountController(
-                keychain: keychain,
-                connectionsFileURL: base.appendingPathComponent("claude-connections.json")),
-            provider: ClaudeUsageProvider(session: session))
-        let codex = CodexConnectionManager(
-            controller: CodexAccountController(
-                keychain: keychain,
-                connectionsFileURL: base.appendingPathComponent("codex-connections.json")),
-            provider: CodexUsageProvider(session: session))
-        let openCode = OpenCodeConnectionManager(
-            controller: OpenCodeAccountController(
-                keychain: keychain,
-                connectionsFileURL: base.appendingPathComponent("opencode-connections.json")),
-            provider: OpenCodeUsageProvider(session: session))
-        let commandCode = CommandCodeConnectionManager(
-            controller: CommandCodeAccountController(
-                keychain: keychain,
-                connectionsFileURL: base.appendingPathComponent("commandcode-connections.json")),
-            provider: CommandCodeUsageProvider(session: session))
-        let zai = ZaiConnectionManager(
-            controller: ZaiAccountController(
-                keychain: keychain,
-                connectionsFileURL: base.appendingPathComponent("zai-connections.json")),
-            provider: ZaiUsageProvider(session: session))
-
-        struct Due {
+        struct Due: Sendable {
             let slotID: AccountSlotID
-            let fetch: @MainActor () async -> Result<UsageSnapshot, WidgetFetchFailure>
+            let fetch: @Sendable () async -> Result<UsageSnapshot, WidgetFetchFailure>
         }
         var due: [Due] = []
-        func appendDue(_ slotID: AccountSlotID, connected: Bool, fetch: @escaping @MainActor () async -> Result<UsageSnapshot, WidgetFetchFailure>) {
-            guard connected else { return }
+        func appendDue(_ slotID: AccountSlotID, credential: MirroredCredential?, fetch: @escaping @Sendable () async -> Result<UsageSnapshot, WidgetFetchFailure>) {
+            guard let credential else { return }
             if let retryAt = retryMap[slotID.rawValue], retryAt > now { return }
             if case .loaded(let snap) = store.load(slotID: slotID, now: now),
                now.timeIntervalSince(snap.capturedAt) < maxAge {
@@ -81,11 +52,49 @@ public enum WidgetRefresher {
             }
             due.append(Due(slotID: slotID, fetch: fetch))
         }
-        appendDue(.claude, connected: claude.isConnected(.claude)) { await claude.refresh(slotID: .claude).snapshotResult }
-        appendDue(.chatGPT, connected: codex.isConnected(.chatGPT)) { await codex.refresh(slotID: .chatGPT).snapshotResult }
-        appendDue(.openCodeGO, connected: openCode.isConnected(.openCodeGO)) { await openCode.refresh(slotID: .openCodeGO).snapshotResult }
-        appendDue(.commandCodeGOAT, connected: commandCode.isConnected(.commandCodeGOAT)) { await commandCode.refresh(slotID: .commandCodeGOAT).snapshotResult }
-        appendDue(.zaiCodingPlan, connected: zai.isConnected(.zaiCodingPlan)) { await zai.refresh(slotID: .zaiCodingPlan).snapshotResult }
+
+        if let c = mirrored[.claude]?.claudeOAuthJSON,
+           let oauth = try? JSONDecoder().decode(ClaudeOAuthCredentials.self, from: c) {
+            appendDue(.claude, credential: MirroredCredential(claudeOAuthJSON: c)) {
+                do {
+                    let result = try await ClaudeUsageProvider(session: session).fetchUsage(credentials: oauth)
+                    return .success(UsageSnapshot(slotID: .claude, provider: .claude, windows: result.windows, capturedAt: Date()))
+                } catch { return .failure(WidgetFetchFailure(String(describing: error))) }
+            }
+        }
+        if let c = mirrored[.chatGPT]?.codexOAuthJSON,
+           let oauth = try? JSONDecoder().decode(CodexOAuthCredentials.self, from: c) {
+            appendDue(.chatGPT, credential: MirroredCredential(codexOAuthJSON: c)) {
+                do {
+                    let result = try await CodexUsageProvider(session: session).fetchUsage(credentials: oauth)
+                    return .success(UsageSnapshot(slotID: .chatGPT, provider: .gpt, windows: result.windows, capturedAt: Date()))
+                } catch { return .failure(WidgetFetchFailure(String(describing: error))) }
+            }
+        }
+        if let key = mirrored[.openCodeGO]?.apiKey {
+            appendDue(.openCodeGO, credential: MirroredCredential(apiKey: key)) {
+                do {
+                    let result = try await OpenCodeUsageProvider(session: session).fetchUsage(credentials: OpenCodeCredentials(apiKey: key))
+                    return .success(UsageSnapshot(slotID: .openCodeGO, provider: .opencode, windows: result.windows, capturedAt: Date()))
+                } catch { return .failure(WidgetFetchFailure(String(describing: error))) }
+            }
+        }
+        if let key = mirrored[.commandCodeGOAT]?.apiKey {
+            appendDue(.commandCodeGOAT, credential: MirroredCredential(apiKey: key)) {
+                do {
+                    let result = try await CommandCodeUsageProvider(session: session).fetchUsage(credentials: CommandCodeCredentials(apiKey: key))
+                    return .success(UsageSnapshot(slotID: .commandCodeGOAT, provider: .commandCode, windows: result.windows, capturedAt: Date()))
+                } catch { return .failure(WidgetFetchFailure(String(describing: error))) }
+            }
+        }
+        if let key = mirrored[.zaiCodingPlan]?.apiKey {
+            appendDue(.zaiCodingPlan, credential: MirroredCredential(apiKey: key)) {
+                do {
+                    let result = try await ZaiUsageProvider(session: session).fetchUsage(credentials: ZaiCredentials(apiKey: key))
+                    return .success(UsageSnapshot(slotID: .zaiCodingPlan, provider: .zai, windows: result.windows, capturedAt: Date()))
+                } catch { return .failure(WidgetFetchFailure(String(describing: error))) }
+            }
+        }
 
         guard !due.isEmpty else {
             saveRetryMap(retryMap, base: base)
@@ -93,9 +102,6 @@ public enum WidgetRefresher {
         }
         NSLog("[AgentUsageWidget] self-heal: fetching %d stale slots", due.count)
 
-        // Concurrent: the extension's execution budget is seconds — five
-        // sequential fetches with 30s timeouts got the process killed mid-run
-        // (observed live: partial writes, no retry map).
         var outcomes: [AccountSlotID: Result<UsageSnapshot, WidgetFetchFailure>] = [:]
         await withTaskGroup(of: (AccountSlotID, Result<UsageSnapshot, WidgetFetchFailure>).self) { group in
             for item in due {
@@ -116,9 +122,6 @@ public enum WidgetRefresher {
                 refreshed.append(slotID)
                 retryMap.removeValue(forKey: slotID.rawValue)
             case .failure(let failure):
-                // Back off modestly; precise server Retry-After is honored by
-                // the app's scheduler — this map only protects the widget's
-                // ~5-minute timeline cadence.
                 NSLog("[AgentUsageWidget] self-heal %@ failed: %@", slotID.rawValue, failure.message)
                 retryMap[slotID.rawValue] = now.addingTimeInterval(10 * 60)
             }
@@ -154,51 +157,4 @@ public enum WidgetRefresher {
 public struct WidgetFetchFailure: Error, Sendable {
     public let message: String
     public init(_ message: String) { self.message = message }
-}
-
-/// Maps per-provider refresh outcomes to (snapshot | failure).
-extension ClaudeRefreshOutcome {
-    var snapshotResult: Result<UsageSnapshot, WidgetFetchFailure> {
-        switch self {
-        case .updated(let s): return .success(s)
-        case .rateLimited: return .failure(WidgetFetchFailure("rate limited"))
-        default: return .failure(WidgetFetchFailure("refresh failed"))
-        }
-    }
-}
-extension CodexRefreshOutcome {
-    var snapshotResult: Result<UsageSnapshot, WidgetFetchFailure> {
-        switch self {
-        case .updated(let s): return .success(s)
-        case .rateLimited: return .failure(WidgetFetchFailure("rate limited"))
-        default: return .failure(WidgetFetchFailure("refresh failed"))
-        }
-    }
-}
-extension OpenCodeRefreshOutcome {
-    var snapshotResult: Result<UsageSnapshot, WidgetFetchFailure> {
-        switch self {
-        case .updated(let s): return .success(s)
-        case .rateLimited: return .failure(WidgetFetchFailure("rate limited"))
-        default: return .failure(WidgetFetchFailure("refresh failed"))
-        }
-    }
-}
-extension CommandCodeRefreshOutcome {
-    var snapshotResult: Result<UsageSnapshot, WidgetFetchFailure> {
-        switch self {
-        case .updated(let s): return .success(s)
-        case .rateLimited: return .failure(WidgetFetchFailure("rate limited"))
-        default: return .failure(WidgetFetchFailure("refresh failed"))
-        }
-    }
-}
-extension ZaiRefreshOutcome {
-    var snapshotResult: Result<UsageSnapshot, WidgetFetchFailure> {
-        switch self {
-        case .updated(let s): return .success(s)
-        case .rateLimited: return .failure(WidgetFetchFailure("rate limited"))
-        default: return .failure(WidgetFetchFailure("refresh failed"))
-        }
-    }
 }

@@ -213,6 +213,35 @@ final class StatusModel {
         NSLog("[AgentUsage] keychain shared-group migration: %d slots verified", migrated)
     }
 
+    /// Mirror current credentials for connected slots into the widget
+    /// extension's container (0600). The sandboxed widget reads this file to
+    /// refresh usage itself — it cannot read the login Keychain.
+    func mirrorCredentialsToWidgetContainer(container: URL, keychain: KeychainStore) {
+        var credentials: [AccountSlotID: MirroredCredential] = [:]
+        if let c = keychain.credentials(account: .claude) {
+            credentials[.claude] = MirroredCredential(
+                claudeOAuthJSON: try? JSONEncoder().encode(c))
+        }
+        if let c = keychain.credentials(account: .chatGPT) {
+            credentials[.chatGPT] = MirroredCredential(
+                codexOAuthJSON: try? JSONEncoder().encode(c))
+        }
+        if let c = keychain.openCodeCredentials(account: .openCodeGO) {
+            credentials[.openCodeGO] = MirroredCredential(apiKey: c.apiKey)
+        }
+        if let c = keychain.commandCodeCredentials(account: .commandCodeGOAT) {
+            credentials[.commandCodeGOAT] = MirroredCredential(apiKey: c.apiKey)
+        }
+        if let c = keychain.zaiCredentials(account: .zaiCodingPlan) {
+            credentials[.zaiCodingPlan] = MirroredCredential(apiKey: c.apiKey)
+        }
+        // Only slots with real material; drop empties.
+        credentials = credentials.filter { entry in
+            entry.value.apiKey != nil || entry.value.claudeOAuthJSON != nil || entry.value.codexOAuthJSON != nil
+        }
+        try? CredentialMirror.write(credentials: credentials, container: container)
+    }
+
     func refreshAllNow() async {
         guard let refreshService else { return }
         await refreshService.triggerGlobal(trigger: .manualGlobal)

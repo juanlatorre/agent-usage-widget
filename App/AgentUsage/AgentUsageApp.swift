@@ -216,11 +216,17 @@ struct AgentUsageApp: App {
             // explicit opt-out remembered in UserDefaults.
             model.loginItemController = SMLoginItemController()
             model.enableBackgroundRefreshByDefault()
-            // Migrate keychain items into the shared access group so the widget
-            // extension can read credentials and refresh usage on its own.
-            model.migrateKeychainToSharedGroup(keychain: KeychainStore(
-                serviceNamePrefix: "com.juanlatorre.agent-usage",
-                sharedAccessGroup: WidgetRefresher.sharedKeychainGroup))
+            // Migrate keychain items into the shared access group, then mirror
+            // current credentials into the widget container so the sandboxed
+            // extension can refresh usage itself (its sandbox cannot read the
+            // login Keychain — attempting it surfaced the login-password
+            // prompt every few minutes).
+            let sharedKeychain = KeychainStore(serviceNamePrefix: "com.juanlatorre.agent-usage",
+                                                sharedAccessGroup: WidgetRefresher.sharedKeychainGroup)
+            model.migrateKeychainToSharedGroup(keychain: sharedKeychain)
+            if let widgetContainer = SharedStoreLocations.widgetContainerDirectory() {
+                model.mirrorCredentialsToWidgetContainer(container: widgetContainer, keychain: sharedKeychain)
+            }
             // Re-mirror connection records into the widget's container so its
             // self-heal sees every connected slot (files written before the
             // mirror existed were never copied).
