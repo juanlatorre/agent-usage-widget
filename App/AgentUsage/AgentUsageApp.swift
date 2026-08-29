@@ -10,7 +10,7 @@ struct AgentUsageApp: App {
         // system text rendering and standard highlight; the .window style
         // rendered custom SwiftUI text that looked poorly antialiased.
         MenuBarExtra {
-            MenuBarMenuContent()
+            MenuBarMenuContent(model: statusModel)
         } label: {
             MenuBarIconView()
         }
