@@ -6,15 +6,15 @@ struct AgentUsageApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // Menu bar extra: the always-on surface. Renders per-account rings in
-        // the bar and opens a popover with per-slot rows + actions.
+        // Menu bar extra: the always-on surface. Native .menu style — crisp
+        // system text rendering and standard highlight; the .window style
+        // rendered custom SwiftUI text that looked poorly antialiased.
         MenuBarExtra {
-            MenuBarContentView()
-                .environment(statusModel)
+            MenuBarMenuContent()
         } label: {
             MenuBarIconView()
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
 
         WindowGroup(id: "main") {
             RootView()
