@@ -6,6 +6,16 @@ struct AgentUsageApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
+        // Menu bar extra: the always-on surface. Renders per-account rings in
+        // the bar and opens a popover with per-slot rows + actions.
+        MenuBarExtra {
+            MenuBarContentView()
+                .environment(statusModel)
+        } label: {
+            MenuBarIconView(presentations: statusModel.presentations)
+        }
+        .menuBarExtraStyle(.window)
+
         WindowGroup(id: "main") {
             RootView()
                 .environment(statusModel)
