@@ -22,10 +22,17 @@ struct AgentUsageApp: App {
                 .frame(minWidth: 720, minHeight: 520)
                 .handlesExternalEvents(preferring: ["agent-usage"], allowing: ["agent-usage"])
         }
-        .windowToolbarStyle(.unified)
-        .handlesExternalEvents(matching: ["agent-usage"])
         .commands {
             CommandGroup(replacing: .newItem) {}
+            // ⌘Q hides the app instead of terminating: the refresh pipeline
+            // (menu bar + widgets) keeps running. A real quit remains in the
+            // Dock right-click menu (system-provided) and via AppDelegate.
+            CommandGroup(replacing: .appTermination) {
+                Button("Hide Agent Usage") {
+                    NSApp.hide(nil)
+                }
+                .keyboardShortcut("q")
+            }
         }
 
         Settings {
