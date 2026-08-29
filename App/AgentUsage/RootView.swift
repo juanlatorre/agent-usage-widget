@@ -57,16 +57,8 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active { Task { await model.handleAppActivationDetached() } }
         }
-        .onAppear {
-            AppDelegate.reopenHandler = {
-                // Debounce: openWindow is async — two rapid reopens (before the
-                // first window becomes visible) would stack duplicates.
-                let now = Date()
-                if let last = AppDelegate.lastReopenAt, now.timeIntervalSince(last) < 1.5 { return }
-                AppDelegate.lastReopenAt = now
-                let hasMain = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
-                if !hasMain { openWindow(id: "main") }
-            }
+        .onReceive(NotificationCenter.default.publisher(for: .agentUsageReopenMainWindow)) { _ in
+            openWindow(id: "main")
         }
         .onOpenURL { url in
             // agent-usage://refresh — the widget's refresh control (a Link,

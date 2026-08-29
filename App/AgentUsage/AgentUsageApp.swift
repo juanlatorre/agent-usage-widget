@@ -12,7 +12,7 @@ struct AgentUsageApp: App {
             MenuBarContentView()
                 .environment(statusModel)
         } label: {
-            MenuBarIconView(presentations: statusModel.presentations)
+            MenuBarIconView()
         }
         .menuBarExtraStyle(.window)
 
@@ -246,6 +246,10 @@ struct AgentUsageApp: App {
     }()
 }
 
+extension Notification.Name {
+    static let agentUsageReopenMainWindow = Notification.Name("AgentUsageReopenMainWindow")
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Closing the window must NOT quit the app: the refresh pipeline keeps
     /// widget snapshots fresh, and without it every slot degrades to
@@ -262,9 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !flag {
             MainActor.assumeIsolated {
                 let hasMain = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
-                if !hasMain {
-                    Self.reopenHandler?()
-                }
+                if !hasMain { Self.openMainWindow() }
             }
         }
         return true
@@ -275,6 +277,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// AppKit reopen callback.
     @MainActor static var reopenHandler: (() -> Void)?
     @MainActor static var lastReopenAt: Date?
+
+    /// Opens (or focuses) the main window, debounced.
+    @MainActor
+    static func openMainWindow() {
+        let now = Date()
+        if let last = lastReopenAt, now.timeIntervalSince(last) < 1.5 { return }
+        lastReopenAt = now
+        reopenHandler?()
+    }
 }
 
 

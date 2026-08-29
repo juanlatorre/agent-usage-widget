@@ -6,7 +6,6 @@ import AgentUsageCore
 /// always reflects the same state as the main window and the widgets.
 struct MenuBarContentView: View {
     @Environment(StatusModel.self) private var model
-    @Environment(\.openWindow) private var openWindow
     @Environment(\.scenePhase) private var scenePhase
     @State private var refreshing = false
 
@@ -46,7 +45,7 @@ struct MenuBarContentView: View {
 
             Divider()
             Button {
-                openWindow(id: "main")
+                AppDelegate.openMainWindow()
             } label: {
                 Label("Open dashboard", systemImage: "rectangle.inset.filled")
                     .font(.footnote)
