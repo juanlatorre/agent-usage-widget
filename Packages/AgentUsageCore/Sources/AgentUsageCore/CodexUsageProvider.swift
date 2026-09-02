@@ -106,27 +106,19 @@ public struct CodexUsageProvider: Sendable {
 
     /// Normalize the rate_limit payload into the required windows.
     ///
-    /// Contract (child spec R2/R3):
-    /// - a complete window needs both a finite percentage in 0...100 AND a
-    ///   future reset (absolute epoch, else nonnegative `reset_after_seconds`
-    ///   relative to fetch time); anything less yields NO window — never zero
-    ///   usage presented as current (AC4);
-    /// - `limit_reached`/`allowed` corroborate blocking only when the complete
-    ///   window already exists (R3);
-    /// - `primary_window` maps to Weekly; `secondary_window` maps to 5-hour
-    ///   (ChatGPT Plus has both — Pro may only report primary);
-    /// - unknown extra fields are ignored (R6).
+    /// Window kind is determined by `limit_window_seconds`: ≤ 5h (18000s) is
+    /// fiveHour, everything longer is weekly. This is robust regardless of
+    /// which slot (primary vs secondary) the API places each window in.
     public static func normalize(data: Data, now: Date) throws -> [UsageWindow] {
         do {
             let payload = try JSONDecoder().decode(Payload.self, from: data)
             var windows: [UsageWindow] = []
-            if let primary = payload.rateLimit?.primaryWindow,
-               let window = normalizedWindow(from: primary, now: now, kind: .weekly) {
-                windows.append(window)
-            }
-            if let secondary = payload.rateLimit?.secondaryWindow,
-               let window = normalizedWindow(from: secondary, now: now, kind: .fiveHour) {
-                windows.append(window)
+            for raw in [payload.rateLimit?.primaryWindow, payload.rateLimit?.secondaryWindow] {
+                guard let raw else { continue }
+                let kind = windowKind(for: raw)
+                if let window = normalizedWindow(from: raw, now: now, kind: kind) {
+                    windows.append(window)
+                }
             }
             return windows
         } catch let error as CodexUsageError {
@@ -134,6 +126,14 @@ public struct CodexUsageProvider: Sendable {
         } catch {
             throw CodexUsageError.transport("undecodable usage payload")
         }
+    }
+
+    /// Classify a raw window by its duration. ≤ 5 hours → fiveHour, else weekly.
+    static func windowKind(for raw: RawWindow) -> UsageWindowKind {
+        if let seconds = raw.limitWindowSeconds, seconds > 0, seconds <= 18_000 {
+            return .fiveHour
+        }
+        return .weekly
     }
 
     /// Build a usage window from raw window values, or nil when incomplete.
