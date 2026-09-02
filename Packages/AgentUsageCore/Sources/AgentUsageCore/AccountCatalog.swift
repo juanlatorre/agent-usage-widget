@@ -114,7 +114,7 @@ public enum AccountCatalog {
             slotID: .chatGPT,
             label: "ChatGPT",
             provider: .gpt,
-            requiredWindows: [.weekly]),
+            requiredWindows: [.fiveHour, .weekly]),
         AccountSlot(
             slotID: .openCodeGO,
             label: "OpenCode · GO",

@@ -104,7 +104,7 @@ public struct CodexUsageProvider: Sendable {
 
     // MARK: - Normalization
 
-    /// Normalize a raw usage payload into the one required Weekly window.
+    /// Normalize the rate_limit payload into the required windows.
     ///
     /// Contract (child spec R2/R3):
     /// - a complete window needs both a finite percentage in 0...100 AND a
@@ -113,19 +113,22 @@ public struct CodexUsageProvider: Sendable {
     ///   usage presented as current (AC4);
     /// - `limit_reached`/`allowed` corroborate blocking only when the complete
     ///   window already exists (R3);
+    /// - `primary_window` maps to Weekly; `secondary_window` maps to 5-hour
+    ///   (ChatGPT Plus has both — Pro may only report primary);
     /// - unknown extra fields are ignored (R6).
     public static func normalize(data: Data, now: Date) throws -> [UsageWindow] {
         do {
             let payload = try JSONDecoder().decode(Payload.self, from: data)
+            var windows: [UsageWindow] = []
             if let primary = payload.rateLimit?.primaryWindow,
-               let window = normalizedWindow(from: primary, now: now) {
-                return [window]
+               let window = normalizedWindow(from: primary, now: now, kind: .weekly) {
+                windows.append(window)
             }
-            // Transport succeeded but the required Weekly window is incomplete.
-            // Return no window so the caller can persist an UNAVAILABLE snapshot
-            // rather than treating this as a transient failure (child spec R4,
-            // parent R1/R7 precedence). Never fabricate zero usage.
-            return []
+            if let secondary = payload.rateLimit?.secondaryWindow,
+               let window = normalizedWindow(from: secondary, now: now, kind: .fiveHour) {
+                windows.append(window)
+            }
+            return windows
         } catch let error as CodexUsageError {
             throw error
         } catch {
@@ -133,10 +136,10 @@ public struct CodexUsageProvider: Sendable {
         }
     }
 
-    /// Build the Weekly window from raw primary-window values, or nil when the
-    /// pair is incomplete. Percentage must be finite within 0...100; reset must
-    /// be an absolute epoch strictly after `now`, or relative seconds >= 0.
-    static func normalizedWindow(from primary: RawWindow, now: Date) -> UsageWindow? {
+    /// Build a usage window from raw window values, or nil when incomplete.
+    /// Percentage must be finite within 0...100; reset must be an absolute
+    /// epoch strictly after `now`, or relative seconds >= 0.
+    static func normalizedWindow(from primary: RawWindow, now: Date, kind: UsageWindowKind) -> UsageWindow? {
         guard let usedPercent = primary.usedPercent,
               usedPercent.isFinite,
               usedPercent >= 0, usedPercent <= 100 else {
@@ -151,8 +154,8 @@ public struct CodexUsageProvider: Sendable {
             notes.append("reset derived from reset_after_seconds")
         }
         return UsageWindow(
-            id: .weekly,
-            name: UsageWindowKind.weekly.displayName,
+            id: kind,
+            name: kind.displayName,
             isRequired: true,
             used: usedPercent,
             limit: 100,
@@ -199,11 +202,13 @@ public struct CodexUsageProvider: Sendable {
         let allowed: Bool?
         let limitReached: Bool?
         let primaryWindow: RawWindow?
+        let secondaryWindow: RawWindow?
 
         enum CodingKeys: String, CodingKey {
             case allowed
             case limitReached = "limit_reached"
             case primaryWindow = "primary_window"
+            case secondaryWindow = "secondary_window"
         }
     }
 

@@ -26,9 +26,10 @@ import Foundation
     }
 
     @Test func usedRemainingComplementsWithoutChangingAvailability() {
-        // gptPersonal requires only .weekly, so use that kind.
+        // chatGPT requires .fiveHour + .weekly; both must be present.
         let window = UsageWindow(id: .weekly, name: "Weekly", isRequired: true, used: 42, limit: 100, resetAt: now.addingTimeInterval(3600))
-        let snap = UsageSnapshot(slotID: .chatGPT, provider: .gpt, windows: [window], capturedAt: now)
+        let fiveHour = UsageWindow(id: .fiveHour, name: "5 hour", isRequired: true, used: 10, limit: 100, resetAt: now.addingTimeInterval(1800))
+        let snap = UsageSnapshot(slotID: .chatGPT, provider: .gpt, windows: [fiveHour, window], capturedAt: now)
         let slot = AccountCatalog.slot(for: .chatGPT)!
         let p = AvailabilityEngine.derive(slot: slot, snapshot: snap, now: now)
         #expect(p.status == .available)

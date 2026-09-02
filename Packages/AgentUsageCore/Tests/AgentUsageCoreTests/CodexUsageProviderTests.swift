@@ -257,9 +257,14 @@ struct CodexNormalizationTests {
 
         // Through the engine: blocked with availableAt at the weekly reset (AC2).
         let slot = AccountCatalog.slot(for: .chatGPT)!
+        let fiveHour = UsageWindow(
+            id: .fiveHour, name: "5 hour", isRequired: true,
+            used: 30, limit: 100,
+            resetAt: Date(timeIntervalSince1970: 1_760_000_000 + 18_000),
+            sourceDiagnostics: SourceDiagnostics(sourceKind: "test", sourceReliability: "test", notes: []))
         let snapshot = UsageSnapshot(
             slotID: .chatGPT, provider: .gpt,
-            windows: windows, capturedAt: now)
+            windows: windows + [fiveHour], capturedAt: now)
         let presentation = AvailabilityEngine.derive(slot: slot, snapshot: snapshot, now: now.addingTimeInterval(1))
         #expect(presentation.status == .blocked)
         #expect(presentation.availableAt == weekly.resetAt)
