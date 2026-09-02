@@ -253,6 +253,17 @@ final class StatusModel {
         Task { await refreshAllNow() }
     }
 
+    /// Listens for widget-initiated refresh requests (URL scheme handler).
+    func startListeningForRefreshRequests() {
+        NotificationCenter.default.addObserver(
+            forName: .init("AgentUsageForceRefresh"), object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.refreshAllNow()
+            }
+        }
+    }
+
     func refreshVisibleSlots(_ slotIDs: [AccountSlotID]) async {
         guard let refreshService else { return }
         await refreshService.triggerSlots(slotIDs, trigger: .widget)

@@ -233,6 +233,7 @@ struct AgentUsageApp: App {
             // explicit opt-out remembered in UserDefaults.
             model.loginItemController = SMLoginItemController()
             model.enableBackgroundRefreshByDefault()
+
             // Migrate keychain items into the shared access group, then mirror
             // current credentials into the widget container so the sandboxed
             // extension can refresh usage itself (its sandbox cannot read the
@@ -241,6 +242,7 @@ struct AgentUsageApp: App {
             let sharedKeychain = KeychainStore(serviceNamePrefix: "com.juanlatorre.agent-usage",
                                                 sharedAccessGroup: WidgetRefresher.sharedKeychainGroup)
             model.migrateKeychainToSharedGroup(keychain: sharedKeychain)
+            model.startListeningForRefreshRequests()
             if let widgetContainer = SharedStoreLocations.widgetContainerDirectory() {
                 model.mirrorCredentialsToWidgetContainer(container: widgetContainer, keychain: sharedKeychain)
             }
@@ -258,6 +260,53 @@ extension Notification.Name {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Set by AgentUsageApp after the StatusModel is ready. Routes URL events
+    /// (agent-usage://refresh) to the refresh pipeline without depending on
+    /// any view being mounted.
+    var onRefreshRequest: (() -> Void)?
+    var onReopenRequest: (() -> Void)?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Wire URL + reopen callbacks to the shared StatusModel (created by
+        // the App struct's statusModel lazy init, accessible via NSApp).
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            // The StatusModel is built by the App struct; find it via the
+            // menu bar extra's environment (it's the same instance).
+            self.onRefreshRequest = { [weak self] in
+                Task { @MainActor in
+                    NotificationCenter.default.post(name: .init("AgentUsageForceRefresh"), object: nil)
+                }
+            }
+            self.onReopenRequest = { [weak self] in
+                NotificationCenter.default.post(name: .agentUsageReopenMainWindow, object: nil)
+            }
+        }
+        // Register the custom URL scheme handler at the AppKit level so it
+        // works even with no windows open.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL))
+    }
+
+    @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: urlString) else { return }
+        if url.host == "refresh" || url.host == "open" {
+            let handler = { [weak self] in
+                self?.onRefreshRequest?()
+                self?.onReopenRequest?()
+            }
+            if Thread.isMainThread {
+                handler()
+            } else {
+                DispatchQueue.main.sync(execute: handler)
+            }
+        }
+    }
+
     /// Closing the window must NOT quit the app: the refresh pipeline keeps
     /// widget snapshots fresh, and without it every slot degrades to
     /// Unavailable once the 15-minute honesty horizon passes. Quit explicitly
