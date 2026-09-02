@@ -57,12 +57,10 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active { Task { await model.handleAppActivationDetached() } }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .agentUsageReopenMainWindow)) { _ in
-            openWindow(id: "main")
-        }
         .onAppear {
             AppDelegate.reopenHandler = { openWindow(id: "main") }
         }
+
     }
 }
 

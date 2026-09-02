@@ -321,11 +321,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
             MainActor.assumeIsolated {
-                let hasMain = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
-                if !hasMain { Self.openMainWindow() }
+                Self.openMainWindow()
             }
         }
         return true
+    }
+
+    /// Show the main window. Called on reopen and from the menu bar.
+    @MainActor
+    static func openMainWindow() {
+        // Activate first so the app comes to front even if it was hidden.
+        NSApp.activate(ignoringOtherApps: true)
+        // If SwiftUI already has a visible main window, focus it.
+        let mainWindows = NSApp.windows.filter {
+            $0.isVisible && $0.canBecomeMain && !$0.isSheet && $0.frame.width > 1
+        }
+        if let window = mainWindows.first {
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        // No visible window: tell SwiftUI to create one via the retained handler.
+        reopenHandler?()
     }
 
     /// Retained openWindow action set by RootView.onAppear; survives window close.
@@ -334,14 +350,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor static var reopenHandler: (() -> Void)?
     @MainActor static var lastReopenAt: Date?
 
-    /// Opens (or focuses) the main window, debounced.
-    @MainActor
-    static func openMainWindow() {
-        let now = Date()
-        if let last = lastReopenAt, now.timeIntervalSince(last) < 1.5 { return }
-        lastReopenAt = now
-        reopenHandler?()
-    }
 }
 
 
