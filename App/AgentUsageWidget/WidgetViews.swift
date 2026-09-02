@@ -271,16 +271,15 @@ private struct WidgetHeader: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
-            // Button(intent:) runs in this extension process and fetches via
-            // the shared keychain group — no app launch needed. (A plain URL
-            // link was the previous stopgap; the in-process fetch is better UX.)
-            Button(intent: RefreshWidgetIntent()) {
+            // Opens the app via URL scheme — the app is the sole fetcher
+            // (it has Keychain access; the sandboxed extension doesn't).
+            // The app's onOpenURL forces a manualGlobal refresh on arrival.
+            Link(destination: URL(string: "agent-usage://refresh")!) {
                 Image(systemName: "arrow.clockwise")
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Refresh accounts")
+            .accessibilityLabel("Refresh accounts — opens the app")
         }
     }
 }
