@@ -19,7 +19,7 @@ struct MenuBarMenuContent: View {
             Task { await model.refreshAllNow() }
         }
         Button("Open Dashboard") {
-            AppDelegate.openMainWindow()
+            NSApp.activate(ignoringOtherApps: true)
         }
         Divider()
         Button("Quit Agent Usage") {

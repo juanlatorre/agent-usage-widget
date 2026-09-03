@@ -243,6 +243,7 @@ struct AgentUsageApp: App {
                                                 sharedAccessGroup: WidgetRefresher.sharedKeychainGroup)
             model.migrateKeychainToSharedGroup(keychain: sharedKeychain)
             model.startListeningForRefreshRequests()
+
             if let widgetContainer = SharedStoreLocations.widgetContainerDirectory() {
                 model.mirrorCredentialsToWidgetContainer(container: widgetContainer, keychain: sharedKeychain)
             }
@@ -260,30 +261,10 @@ extension Notification.Name {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// Set by AgentUsageApp after the StatusModel is ready. Routes URL events
-    /// (agent-usage://refresh) to the refresh pipeline without depending on
-    /// any view being mounted.
-    var onRefreshRequest: (() -> Void)?
-    var onReopenRequest: (() -> Void)?
+    var onRefreshRequest: (@Sendable () -> Void)?
+    var onReopenRequest: (@Sendable () -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Wire URL + reopen callbacks to the shared StatusModel (created by
-        // the App struct's statusModel lazy init, accessible via NSApp).
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            // The StatusModel is built by the App struct; find it via the
-            // menu bar extra's environment (it's the same instance).
-            self.onRefreshRequest = { [weak self] in
-                Task { @MainActor in
-                    NotificationCenter.default.post(name: .init("AgentUsageForceRefresh"), object: nil)
-                }
-            }
-            self.onReopenRequest = { [weak self] in
-                NotificationCenter.default.post(name: .agentUsageReopenMainWindow, object: nil)
-            }
-        }
-        // Register the custom URL scheme handler at the AppKit level so it
-        // works even with no windows open.
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
@@ -295,62 +276,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
               let url = URL(string: urlString) else { return }
         if url.host == "refresh" || url.host == "open" {
-            let handler = { [weak self] in
-                self?.onRefreshRequest?()
-                self?.onReopenRequest?()
-            }
-            if Thread.isMainThread {
-                handler()
-            } else {
-                DispatchQueue.main.sync(execute: handler)
+            let callback = onRefreshRequest
+            let reopen = onReopenRequest
+            DispatchQueue.main.async {
+                callback?()
+                reopen?()
             }
         }
     }
 
-    /// Closing the window must NOT quit the app: the refresh pipeline keeps
-    /// widget snapshots fresh, and without it every slot degrades to
-    /// Unavailable once the 15-minute honesty horizon passes. Quit explicitly
-    /// via ⌘Q or Dock → Quit.
+    /// Closing the window does NOT quit the app (background refresh keeps
+    /// widgets fresh). Quit via ⌘Q → Hide, or Dock → Quit.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
 
-    /// Dock icon click with no visible window reopens the main window —
-    /// exactly once: the handler checks for a visible window before opening
-    /// (WindowGroup would otherwise stack duplicates).
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            MainActor.assumeIsolated {
-                Self.openMainWindow()
-            }
-        }
-        return true
+        true
     }
-
-    /// Show the main window. Called on reopen and from the menu bar.
-    @MainActor
-    static func openMainWindow() {
-        // Activate first so the app comes to front even if it was hidden.
-        NSApp.activate(ignoringOtherApps: true)
-        // If SwiftUI already has a visible main window, focus it.
-        let mainWindows = NSApp.windows.filter {
-            $0.isVisible && $0.canBecomeMain && !$0.isSheet && $0.frame.width > 1
-        }
-        if let window = mainWindows.first {
-            window.makeKeyAndOrderFront(nil)
-            return
-        }
-        // No visible window: tell SwiftUI to create one via the retained handler.
-        reopenHandler?()
-    }
-
-    /// Retained openWindow action set by RootView.onAppear; survives window close.
-    /// MainActor-isolated: set from the main scene, read from the (main-actor)
-    /// AppKit reopen callback.
-    @MainActor static var reopenHandler: (() -> Void)?
-    @MainActor static var lastReopenAt: Date?
-
 }
+
 
 
 private extension AgentUsageApp {
