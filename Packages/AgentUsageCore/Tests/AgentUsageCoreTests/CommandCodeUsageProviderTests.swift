@@ -50,6 +50,12 @@ struct CommandCodeUsageProviderTests {
             weekly: (35, 35, 1_760_000_000_000 + 86_400_000)).utf8)
         let windows = try CommandCodeUsageProvider.normalizeCredits(data: data, now: now)
         #expect(windows.count == 2)
+        let monthly = UsageWindow(
+            id: .monthly, name: "Monthly", isRequired: true,
+            used: 0, limit: 100,
+            resetAt: now.addingTimeInterval(30 * 24 * 60 * 60),
+            sourceDiagnostics: SourceDiagnostics(sourceKind: "test", sourceReliability: "test", notes: []))
+        let fullWindows = windows + [monthly]
         let five = windows.first { $0.id == .fiveHour }!
         #expect(five.used == 7); #expect(five.limit == 14)
         #expect(five.resetAt == Date(timeIntervalSince1970: Double(1_760_000_000_000 + 3_600_000) / 1000))
@@ -57,7 +63,7 @@ struct CommandCodeUsageProviderTests {
         #expect(weekly.isBlocking)
         // Blocking participates: GOAT blocked by weekly.
         let slot = AccountCatalog.slot(for: .commandCodeGOAT)!
-        let snap = UsageSnapshot(slotID: .commandCodeGOAT, provider: .commandCode, windows: windows, capturedAt: now)
+        let snap = UsageSnapshot(slotID: .commandCodeGOAT, provider: .commandCode, windows: fullWindows, capturedAt: now)
         let pres = AvailabilityEngine.derive(slot: slot, snapshot: snap, now: now.addingTimeInterval(1))
         #expect(pres.status == .blocked)
         #expect(pres.blockers.map(\.id) == [.weekly])
@@ -234,7 +240,12 @@ struct CommandCodeUsageProviderTests {
         #expect(five?.resetAt == now.addingTimeInterval(5 * 60 * 60))
         #expect(five?.sourceDiagnostics.notes.contains("5-hour window inactive; reset time estimated") == true)
         let slot = AccountCatalog.slot(for: .commandCodeGOAT)!
-        let snap = UsageSnapshot(slotID: .commandCodeGOAT, provider: .commandCode, windows: windows, capturedAt: now)
+        let monthlyWin = UsageWindow(
+            id: .monthly, name: "Monthly", isRequired: true,
+            used: 0, limit: 100,
+            resetAt: now.addingTimeInterval(30 * 24 * 60 * 60),
+            sourceDiagnostics: SourceDiagnostics(sourceKind: "test", sourceReliability: "test", notes: []))
+        let snap = UsageSnapshot(slotID: .commandCodeGOAT, provider: .commandCode, windows: windows + [monthlyWin], capturedAt: now)
         #expect(AvailabilityEngine.derive(slot: slot, snapshot: snap, now: now).status == .available)
     }
 

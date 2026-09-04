@@ -124,7 +124,7 @@ public enum AccountCatalog {
             slotID: .commandCodeGOAT,
             label: "Command Code · GOAT",
             provider: .commandCode,
-            requiredWindows: [.fiveHour, .weekly]),
+            requiredWindows: [.fiveHour, .weekly, .monthly]),
         AccountSlot(
             slotID: .zaiCodingPlan,
             label: "Z.ai · Coding Plan",

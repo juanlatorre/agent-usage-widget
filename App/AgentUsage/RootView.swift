@@ -53,12 +53,10 @@ struct RootView: View {
         }
         .frame(minWidth: 720, minHeight: 520)
         .navigationTitle("Agent Usage")
+        .onAppear { NSLog("[AgentUsage] RootView APPEARED — window should be visible") }
         .task { await model.handleAppActivationDetached() }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active { Task { await model.handleAppActivationDetached() } }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .agentUsageReopenMainWindow)) { _ in
-            openWindow(id: "main")
         }
 
     }

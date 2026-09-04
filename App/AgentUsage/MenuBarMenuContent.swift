@@ -9,6 +9,9 @@ import AgentUsageCore
 /// crashes here (assertion in EnvironmentValues.subscript — observed live).
 struct MenuBarMenuContent: View {
     let model: StatusModel
+    @Environment(\.openWindow) private var openWindow
+
+    @State private var hasAutoOpened = false
 
     var body: some View {
         ForEach(model.presentations) { p in
@@ -24,6 +27,13 @@ struct MenuBarMenuContent: View {
         Divider()
         Button("Quit Agent Usage") {
             NSApp.terminate(nil)
+        }
+        .onAppear {
+            // First menu open: show the main window so the user sees the app
+            if !hasAutoOpened {
+                hasAutoOpened = true
+                openWindow(id: "main")
+            }
         }
     }
 

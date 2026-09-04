@@ -194,6 +194,17 @@ public struct CommandCodeUsageProvider: Sendable {
             if let w = normalizedWindow(kind: .weekly, raw: payload.windowLimits?.weekly, now: now) {
                 windows.append(w)
             }
+            // Monthly credits nearly exhausted → blocking window so the user sees why.
+            if let mc = payload.credits?.monthlyCredits, mc < 1.0 {
+                let nextMonth = Calendar.current.date(byAdding: .month, value: 1, to: now)
+                    ?? now.addingTimeInterval(30 * 24 * 60 * 60)
+                windows.append(UsageWindow(
+                    id: .monthly, name: UsageWindowKind.monthly.displayName,
+                    isRequired: true, used: 100, limit: 100, resetAt: nextMonth,
+                    sourceDiagnostics: SourceDiagnostics(
+                        sourceKind: "commandcode-credits", sourceReliability: "official-endpoint",
+                        notes: [String(format: "Monthly credits nearly exhausted (%.2f remaining)", mc)])))
+            }
             return windows
         } catch let error as CommandCodeUsageError {
             throw error
@@ -273,6 +284,12 @@ public struct CommandCodeUsageProvider: Sendable {
 
     struct CreditsPayload: Decodable {
         let windowLimits: WindowLimits?
+        let credits: Credits?
+    }
+
+    struct Credits: Decodable {
+        let monthlyCredits: Double?
+        let belowThreshold: Bool?
     }
 
     struct WindowLimits: Decodable {

@@ -253,7 +253,7 @@ final class StatusModel {
         Task { await refreshAllNow() }
     }
 
-    /// Listens for widget-initiated refresh requests (URL scheme handler).
+    /// Widget refresh button posts this notification; StatusModel responds.
     func startListeningForRefreshRequests() {
         NotificationCenter.default.addObserver(
             forName: .init("AgentUsageForceRefresh"), object: nil, queue: .main
@@ -263,6 +263,9 @@ final class StatusModel {
             }
         }
     }
+
+    /// Listens for widget-initiated refresh requests (URL scheme handler).
+
 
     func refreshVisibleSlots(_ slotIDs: [AccountSlotID]) async {
         guard let refreshService else { return }

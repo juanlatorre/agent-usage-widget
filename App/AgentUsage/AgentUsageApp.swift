@@ -6,33 +6,16 @@ struct AgentUsageApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // Menu bar extra: the always-on surface. Native .menu style — crisp
-        // system text rendering and standard highlight; the .window style
-        // rendered custom SwiftUI text that looked poorly antialiased.
-        MenuBarExtra {
-            MenuBarMenuContent(model: statusModel)
-        } label: {
-            MenuBarIconView()
-        }
-        .menuBarExtraStyle(.menu)
-
         WindowGroup(id: "main") {
             RootView()
                 .environment(statusModel)
                 .frame(minWidth: 720, minHeight: 520)
                 .handlesExternalEvents(preferring: ["agent-usage"], allowing: ["agent-usage"])
         }
+        .windowToolbarStyle(.unified)
+        .handlesExternalEvents(matching: ["agent-usage"])
         .commands {
             CommandGroup(replacing: .newItem) {}
-            // ⌘Q hides the app instead of terminating: the refresh pipeline
-            // (menu bar + widgets) keeps running. A real quit remains in the
-            // Dock right-click menu (system-provided) and via AppDelegate.
-            CommandGroup(replacing: .appTermination) {
-                Button("Hide Agent Usage") {
-                    NSApp.hide(nil)
-                }
-                .keyboardShortcut("q")
-            }
         }
 
         Settings {
@@ -104,8 +87,7 @@ struct AgentUsageApp: App {
                 ?? SnapshotStore.defaultBaseURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
             preferencesFile = sharedGroup.map { $0.appendingPathComponent("preferences.json", isDirectory: false) }
                 ?? PreferencesStore.defaultFileURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
-            let keychain = KeychainStore(serviceNamePrefix: "com.juanlatorre.agent-usage",
-                                          sharedAccessGroup: WidgetRefresher.sharedKeychainGroup)
+            let keychain = KeychainStore(serviceNamePrefix: "com.juanlatorre.agent-usage")
             let connectionsFile = sharedGroup.map { $0.appendingPathComponent("claude-connections.json", isDirectory: false) }
                 ?? ClaudeAccountController.defaultFileURL(appGroupID: SharedStoreLocations.canonicalAppGroupID)
             if let connectionsFile {
@@ -228,75 +210,16 @@ struct AgentUsageApp: App {
             // rate-limited provider is not re-hit immediately on every relaunch.
             scheduler.hydrateFailures(failureStore.load())
             model.attachRefreshService(scheduler: scheduler, failureStore: failureStore, service: service)
-            // Real login-item support (previously nil — the toggle always read
-            // "not available"). Background refresh is on by default with an
-            // explicit opt-out remembered in UserDefaults.
-            model.loginItemController = SMLoginItemController()
-            model.enableBackgroundRefreshByDefault()
-
-            // Migrate keychain items into the shared access group, then mirror
-            // current credentials into the widget container so the sandboxed
-            // extension can refresh usage itself (its sandbox cannot read the
-            // login Keychain — attempting it surfaced the login-password
-            // prompt every few minutes).
-            let sharedKeychain = KeychainStore(serviceNamePrefix: "com.juanlatorre.agent-usage",
-                                                sharedAccessGroup: WidgetRefresher.sharedKeychainGroup)
-            model.migrateKeychainToSharedGroup(keychain: sharedKeychain)
-            model.startListeningForRefreshRequests()
-
-            if let widgetContainer = SharedStoreLocations.widgetContainerDirectory() {
-                model.mirrorCredentialsToWidgetContainer(container: widgetContainer, keychain: sharedKeychain)
-            }
-            // Re-mirror connection records into the widget's container so its
-            // self-heal sees every connected slot (files written before the
-            // mirror existed were never copied).
-            Self.remirrorConnectionsToWidgetContainer()
         }
         return model
     }()
 }
 
-extension Notification.Name {
-    static let agentUsageReopenMainWindow = Notification.Name("AgentUsageReopenMainWindow")
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var onRefreshRequest: (@Sendable () -> Void)?
-    var onReopenRequest: (@Sendable () -> Void)?
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSAppleEventManager.shared().setEventHandler(
-            self,
-            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
-            forEventClass: AEEventClass(kInternetEventClass),
-            andEventID: AEEventID(kAEGetURL))
-    }
-
-    @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
-        guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
-              let url = URL(string: urlString) else { return }
-        if url.host == "refresh" || url.host == "open" {
-            let callback = onRefreshRequest
-            let reopen = onReopenRequest
-            DispatchQueue.main.async {
-                callback?()
-                reopen?()
-            }
-        }
-    }
-
-    /// Closing the window does NOT quit the app (background refresh keeps
-    /// widgets fresh). Quit via ⌘Q → Hide, or Dock → Quit.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
-
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        true
-    }
 }
-
-
 
 private extension AgentUsageApp {
 
@@ -320,23 +243,6 @@ private extension AgentUsageApp {
 
         if let profile = fixtureProfile(named: "fixture-claude", token: "uitest-h", uuid: "uuid-h") {
             try? manager.connect(slotID: .claude, directory: profile)
-        }
-    }
-
-    /// Copy the canonical connection records into the widget extension's
-    /// container so its in-widget refresh sees every connected slot even for
-    /// files last written before the mirroring code existed.
-    static func remirrorConnectionsToWidgetContainer() {
-        let fm = FileManager.default
-        guard let appSupport = SharedStoreLocations.appSupportDirectory(),
-              let widgetContainer = SharedStoreLocations.widgetContainerDirectory() else { return }
-        for name in ["claude-connections.json", "codex-connections.json", "opencode-connections.json",
-                     "commandcode-connections.json", "zai-connections.json", "connections.json"] {
-            let src = appSupport.appendingPathComponent(name)
-            let dst = widgetContainer.appendingPathComponent(name)
-            if fm.fileExists(atPath: src.path), !fm.fileExists(atPath: dst.path) {
-                try? fm.copyItem(at: src, to: dst)
-            }
         }
     }
 
